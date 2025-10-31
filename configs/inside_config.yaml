@@ -1,0 +1,184 @@
+# INSIDE Configuration
+# Configuration for hallucination detection and intent-aware retrieval
+
+# EigenScore Settings
+eigenscore:
+  # Base threshold for hallucination detection (lower = more hallucination risk)
+  threshold: 5.0
+
+  # Whether to normalize embeddings before computing covariance
+  normalize: true
+
+  # Number of top eigenvalues to use (null = use all)
+  top_k_eigenvalues: null
+
+  # Aggregation method for multiple generations ('mean', 'min', 'median', 'max')
+  aggregation_method: 'mean'
+
+  # Whether to use adaptive thresholds based on query characteristics
+  use_adaptive_threshold: true
+
+  # Adaptive threshold parameters
+  adaptive:
+    query_length_adjustment: true
+    confidence_adjustment: true
+
+# Internal States Extraction
+internal_states:
+  # Target layers to extract from (null = use middle layer automatically)
+  # For Llama-2-7B with 32 layers, middle layer is 16
+  target_layers: [16]
+
+  # Position to extract embeddings from ('last', 'first', 'mean')
+  extraction_position: 'last'
+
+  # Whether to split text into sentences for extraction
+  split_sentences: true
+
+# Feature Clipping Settings
+feature_clipping:
+  # Percentile for clipping threshold (e.g., 95 = clip top/bottom 5%)
+  percentile: 95.0
+
+  # Whether to clip both positive and negative extremes symmetrically
+  symmetric: true
+
+  # Whether to compute different thresholds for each layer
+  layer_specific: true
+
+  # Sensitivity threshold for overconfidence detection
+  sensitivity_threshold: 0.3
+
+  # Metric for measuring clipping sensitivity ('edit_distance', 'token_overlap')
+  sensitivity_metric: 'token_overlap'
+
+# Intent Detection Settings
+intent_detection:
+  # Detection method ('rules', 'model', 'hybrid')
+  method: 'rules'
+
+  # Model name for ML-based intent detection (if method is 'model' or 'hybrid')
+  model_name: null  # e.g., 'sentence-transformers/all-MiniLM-L6-v2'
+
+  # Intent-specific retrieval strategies
+  strategies:
+    factual:
+      top_k: 3
+      diversity: 0.0
+      rerank_method: 'relevance'
+      description: 'High precision, focused retrieval'
+
+    exploratory:
+      top_k: 10
+      diversity: 0.7
+      rerank_method: 'diversity'
+      description: 'Broad coverage, diverse results'
+
+    comparative:
+      top_k: 6
+      diversity: 0.5
+      rerank_method: 'contrast'
+      description: 'Contrasting documents for comparison'
+
+    procedural:
+      top_k: 5
+      diversity: 0.3
+      rerank_method: 'sequential'
+      description: 'Step-by-step relevant documents'
+
+    unknown:
+      top_k: 5
+      diversity: 0.3
+      rerank_method: 'relevance'
+      description: 'Default balanced retrieval'
+
+# Hallucination Detection Settings
+hallucination_detection:
+  # Whether to use feature clipping in detection (expensive, use selectively)
+  use_clipping: false
+
+  # Number of generations to sample for robust detection
+  num_samples: 3
+
+  # Temperature for sampling multiple generations
+  sampling_temperature: 0.8
+
+  # Whether to return detailed detection information
+  return_details: false
+
+# Calibration Settings
+calibration:
+  # Percentile for threshold calibration on labeled data
+  percentile: 10.0
+
+  # Minimum number of examples required for calibration
+  min_examples: 10
+
+  # Whether to automatically calibrate on startup (if labeled data available)
+  auto_calibrate: false
+
+  # Path to labeled calibration data
+  calibration_data_path: null
+
+# Performance Settings
+performance:
+  # Device for computation ('cpu', 'cuda', 'mps')
+  # 'mps' = Mac GPU (Apple Silicon M1/M2/M3)
+  device: 'mps'
+
+  # Batch size for batch detection
+  batch_size: 8
+
+  # Whether to cache extracted embeddings
+  cache_embeddings: false
+
+  # Maximum cache size (MB)
+  max_cache_size: 1000
+
+# Integration with Self-RAG
+selfrag_integration:
+  # Whether to enable INSIDE integration with Self-RAG
+  enabled: true
+
+  # Layers to hook for internal state extraction during generation
+  hook_layers: [16]
+
+  # Whether to add INTENT reflection token
+  use_intent_token: true
+
+  # Weight for EigenScore in combined Self-RAG + INSIDE scoring
+  eigenscore_weight: 0.3
+
+  # Weight for existing Self-RAG reflection tokens
+  reflection_token_weight: 0.7
+
+# Logging and Debugging
+logging:
+  # Log level ('DEBUG', 'INFO', 'WARNING', 'ERROR')
+  level: 'INFO'
+
+  # Whether to log detection results
+  log_detections: true
+
+  # Path to save detection logs
+  log_path: 'logs/inside_detections.log'
+
+  # Whether to save embeddings for analysis
+  save_embeddings_for_analysis: false
+
+  # Path to save embeddings
+  embeddings_save_path: 'data/inside_embeddings/'
+
+# Experimental Features
+experimental:
+  # Use multi-layer EigenScore (average across multiple layers)
+  multi_layer_eigenscore: false
+
+  # Layers to use for multi-layer EigenScore
+  multi_layer_targets: [12, 16, 20]
+
+  # Use attention-weighted sentence embeddings
+  attention_weighted_embeddings: false
+
+  # Use cross-generation consistency check
+  cross_generation_consistency: false

@@ -1,0 +1,73 @@
+# Retrieval Pipeline Configuration
+
+# Data paths
+data:
+  corpus_dir: "data/legal_corpus"
+  raw_dir: "data/legal_corpus/raw"
+  processed_dir: "data/legal_corpus/processed"
+  embeddings_dir: "data/embeddings"
+
+# Chunking strategy
+chunking:
+  strategy: "recursive_character"  # Options: recursive_character, fixed_size, semantic
+  chunk_size: 512                  # Maximum chunk size in characters
+  chunk_overlap: 50                # Overlap between chunks
+  separators: ["\n\n", "\n", ". ", " ", ""]  # Hierarchical separators
+
+# Embedding model
+embedding:
+  model_name: "sentence-transformers/all-mpnet-base-v2"  # Options: all-mpnet-base-v2, all-MiniLM-L6-v2
+  batch_size: 32
+  normalize_embeddings: true
+  device: "mps"  # Options: cpu, cuda, mps (Mac GPU - Apple Silicon)
+
+# Vector database (FAISS)
+indexing:
+  index_type: "IndexFlatIP"  # Options: IndexFlatIP, IndexFlatL2, IndexIVFFlat
+  metric: "inner_product"     # Options: inner_product, l2
+  use_gpu: false
+
+# Retrieval parameters
+retrieval:
+  top_k: 5                    # Number of documents to retrieve
+  min_similarity: 0.3         # Minimum similarity threshold (0-1)
+  rerank: false               # Whether to use reranking
+  rerank_model: null          # Reranking model if enabled
+
+# INSIDE Intent-Aware Retrieval (NEW)
+inside:
+  enabled: true               # Enable intent-aware retrieval
+  intent_detection_method: "rules"  # Options: rules, model, hybrid
+  enable_diversity: true      # Enable diversity-based reranking
+
+  # Intent-specific strategies (overrides base retrieval settings)
+  intent_strategies:
+    factual:
+      top_k: 3
+      diversity_weight: 0.0
+      description: "High precision retrieval for factual queries"
+
+    exploratory:
+      top_k: 10
+      diversity_weight: 0.7
+      description: "Diverse results for exploratory queries"
+
+    comparative:
+      top_k: 6
+      diversity_weight: 0.5
+      description: "Contrasting documents for comparison"
+
+    procedural:
+      top_k: 5
+      diversity_weight: 0.3
+      description: "Sequential documents for procedures"
+
+# Evaluation
+evaluation:
+  benchmark: "legalbench-rag"
+  metrics: ["precision@k", "recall@k", "mrr"]
+  k_values: [1, 3, 5, 10]
+
+  # INSIDE-specific evaluation (NEW)
+  evaluate_per_intent: true   # Evaluate retrieval quality per intent
+  evaluate_diversity: true    # Measure diversity scores
