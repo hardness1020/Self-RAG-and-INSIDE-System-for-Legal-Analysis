@@ -10,9 +10,9 @@ import numpy as np
 import yaml
 from pathlib import Path
 
-from .chunking import DocumentChunker, load_chunker_from_config
-from .embedding import EmbeddingModel, load_embedding_model_from_config
-from .indexing import VectorIndex, create_index_from_config
+from src.retrieval.chunking import DocumentChunker, load_chunker_from_config
+from src.retrieval.embedding import EmbeddingModel, load_embedding_model_from_config
+from src.retrieval.indexing import VectorIndex, create_index_from_config
 
 
 class LegalRetriever:

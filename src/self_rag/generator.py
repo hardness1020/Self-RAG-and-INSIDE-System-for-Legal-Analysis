@@ -29,7 +29,7 @@ from datasets import Dataset
 import yaml
 import re
 
-from .reflection_tokens import (
+from src.self_rag.reflection_tokens import (
     RetrieveToken,
     ISRELToken,
     ISSUPToken,

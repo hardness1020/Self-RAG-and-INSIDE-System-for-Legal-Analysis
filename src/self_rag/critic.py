@@ -26,7 +26,7 @@ from peft import (
 from datasets import Dataset
 import yaml
 
-from .reflection_tokens import (
+from src.self_rag.reflection_tokens import (
     RetrieveToken,
     ISRELToken,
     ISSUPToken,
