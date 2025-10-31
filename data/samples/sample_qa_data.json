@@ -1,0 +1,62 @@
+[
+  {
+    "question": "What are the four elements that must be proven to establish negligence?",
+    "answer": "To establish negligence, a plaintiff must prove: (1) duty of care - the defendant owed a legal duty to the plaintiff; (2) breach of duty - the defendant failed to meet the standard of reasonable care; (3) causation - the defendant's breach caused the plaintiff's injury; and (4) damages - the plaintiff suffered actual, compensable harm.",
+    "passage": "To establish negligence, a plaintiff must prove four essential elements: (1) duty of care, (2) breach of that duty, (3) causation, and (4) damages. Each element must be proven by a preponderance of the evidence.",
+    "source": "negligence_basics.txt"
+  },
+  {
+    "question": "What is the standard for determining breach of duty in negligence cases?",
+    "answer": "The standard for breach of duty is objective and based on what a reasonable person would do in similar circumstances. It is not based on the defendant's subjective beliefs or intentions. Courts consider factors such as the likelihood of harm, magnitude of potential harm, and burden of taking precautions.",
+    "passage": "A breach of duty occurs when the defendant fails to exercise reasonable care. The standard is objective: what would a reasonable person do in similar circumstances? Factors considered include the likelihood of harm, the magnitude of potential harm, and the burden of taking precautions.",
+    "source": "negligence_basics.txt"
+  },
+  {
+    "question": "What are the two types of causation required in negligence cases?",
+    "answer": "Negligence requires both actual cause (cause-in-fact) and proximate cause (legal cause). Actual cause is typically determined using the but-for test: but for the defendant's conduct, would the harm have occurred? Proximate cause limits liability to foreseeable consequences.",
+    "passage": "Causation in negligence requires both actual cause (cause-in-fact) and proximate cause (legal cause). Actual cause is often determined using the but-for test. Proximate cause limits liability to foreseeable consequences.",
+    "source": "causation.txt"
+  },
+  {
+    "question": "What types of damages can be recovered in negligence cases?",
+    "answer": "In negligence cases, plaintiffs can recover compensatory damages, which include both economic losses (medical expenses, lost wages, property damage) and non-economic losses (pain and suffering). Damages must be actual and quantifiable; nominal damages alone are insufficient. Punitive damages are rarely available in negligence cases.",
+    "passage": "Damages in negligence cases must be actual and quantifiable. Compensatory damages may include economic losses such as medical expenses and lost wages, as well as non-economic losses like pain and suffering. Punitive damages are rarely available.",
+    "source": "damages.txt"
+  },
+  {
+    "question": "What is the doctrine of res ipsa loquitur?",
+    "answer": "Res ipsa loquitur (the thing speaks for itself) allows a plaintiff to establish negligence through circumstantial evidence. It applies when: (1) the accident ordinarily would not occur without negligence, (2) the instrumentality was under the defendant's exclusive control, and (3) the plaintiff did not contribute to the accident.",
+    "passage": "Res ipsa loquitur is a doctrine that allows a plaintiff to establish a prima facie case of negligence through circumstantial evidence. It applies when: (1) the accident is of a type that ordinarily does not occur without negligence, (2) the instrumentality was under the defendant's exclusive control, and (3) the plaintiff did not contribute to the accident.",
+    "source": "res_ipsa.txt"
+  },
+  {
+    "question": "What is negligence per se?",
+    "answer": "Negligence per se occurs when a defendant violates a statute or regulation designed to protect against the type of harm that occurred. The violation establishes breach of duty. The plaintiff must show they are in the protected class and the harm is the type the statute was designed to prevent.",
+    "passage": "Negligence per se occurs when a defendant violates a statute designed to protect against the type of harm that occurred. The violation establishes breach of duty. The plaintiff must show: (1) they are in the class the statute was intended to protect, and (2) the harm is of the type the statute was designed to prevent.",
+    "source": "negligence_per_se.txt"
+  },
+  {
+    "question": "How does comparative negligence work as a defense?",
+    "answer": "Comparative negligence reduces a plaintiff's recovery based on their degree of fault. In pure comparative negligence jurisdictions, plaintiffs can recover even if 99% at fault, with recovery reduced proportionally. In modified comparative negligence jurisdictions, plaintiffs cannot recover if more than 50% at fault.",
+    "passage": "Comparative negligence reduces a plaintiff's recovery based on their own degree of fault. In pure comparative negligence jurisdictions, a plaintiff can recover even if 99% at fault. In modified comparative negligence jurisdictions, a plaintiff cannot recover if more than 50% at fault.",
+    "source": "defenses.txt"
+  },
+  {
+    "question": "What is assumption of risk?",
+    "answer": "Assumption of risk is a complete defense when a plaintiff voluntarily encounters a known risk. It can be express (through agreement) or implied (through conduct). The defendant must prove the plaintiff knew of the specific risk and voluntarily chose to encounter it.",
+    "passage": "Assumption of risk is a complete defense when a plaintiff voluntarily encounters a known risk. There are two types: express assumption (through agreement) and implied assumption (through conduct). The defendant must prove the plaintiff knew of the specific risk and voluntarily chose to encounter it.",
+    "source": "defenses.txt"
+  },
+  {
+    "question": "What is the standard for professional negligence or malpractice?",
+    "answer": "Professional negligence occurs when a professional fails to exercise the degree of skill and care ordinarily expected of members of that profession in good standing. The standard is reasonable care, not perfection, compared to similarly situated professionals.",
+    "passage": "Professional negligence occurs when a professional fails to exercise the degree of skill and care ordinarily expected of members of that profession in good standing. The standard is not perfection but rather the reasonable care expected of similarly situated professionals.",
+    "source": "professional_negligence.txt"
+  },
+  {
+    "question": "How is duty of care determined in negligence cases?",
+    "answer": "Duty of care is determined by the relationship between parties and the foreseeability of harm. Generally, everyone owes a duty to exercise reasonable care to avoid causing foreseeable harm to others. Special relationships may create heightened duties.",
+    "passage": "The duty of care is determined by the relationship between parties and the foreseeability of harm. In general, everyone owes a duty to exercise reasonable care to avoid causing foreseeable harm to others. Special relationships may create heightened duties.",
+    "source": "duty_of_care.txt"
+  }
+]

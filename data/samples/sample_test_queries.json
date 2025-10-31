@@ -1,0 +1,42 @@
+[
+  {
+    "query": "What are the elements of negligence?",
+    "relevant_doc_ids": [1, 2, 3, 4, 5]
+  },
+  {
+    "query": "How is breach of duty determined?",
+    "relevant_doc_ids": [2]
+  },
+  {
+    "query": "What is causation in negligence?",
+    "relevant_doc_ids": [3]
+  },
+  {
+    "query": "What damages can be recovered in negligence cases?",
+    "relevant_doc_ids": [4]
+  },
+  {
+    "query": "What is res ipsa loquitur?",
+    "relevant_doc_ids": [6]
+  },
+  {
+    "query": "What is negligence per se?",
+    "relevant_doc_ids": [7]
+  },
+  {
+    "query": "What is comparative negligence?",
+    "relevant_doc_ids": [8]
+  },
+  {
+    "query": "What is assumption of risk?",
+    "relevant_doc_ids": [9]
+  },
+  {
+    "query": "What is professional malpractice?",
+    "relevant_doc_ids": [10]
+  },
+  {
+    "query": "What defenses are available in negligence cases?",
+    "relevant_doc_ids": [8, 9]
+  }
+]
