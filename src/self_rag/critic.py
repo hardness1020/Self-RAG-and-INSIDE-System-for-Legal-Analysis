@@ -13,14 +13,12 @@ import torch
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     TrainingArguments,
     Trainer,
 )
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_kbit_training,
     PeftModel,
 )
 from datasets import Dataset
@@ -34,6 +32,7 @@ from src.self_rag.reflection_tokens import (
     ReflectionTokenizer,
     GPT4_PROMPTS,
 )
+from src.utils.device_utils import get_optimal_device
 
 
 class CriticModel:
@@ -80,19 +79,10 @@ class CriticModel:
         """
         print(f"Loading model: {self.model_name}")
 
-        # Setup quantization
+        # Note: 4-bit quantization disabled for macOS compatibility
         if self.load_in_4bit:
-            if quantization_config is None:
-                quantization_config = {
-                    'load_in_4bit': True,
-                    'bnb_4bit_compute_dtype': torch.float16,
-                    'bnb_4bit_quant_type': 'nf4',
-                    'bnb_4bit_use_double_quant': True,
-                }
-
-            bnb_config = BitsAndBytesConfig(**quantization_config)
-        else:
-            bnb_config = None
+            print("Warning: 4-bit quantization not supported on macOS. Loading model in full precision.")
+            self.load_in_4bit = False
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -109,7 +99,6 @@ class CriticModel:
         # Load model
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            quantization_config=bnb_config,
             device_map="auto" if self.device == "cuda" else None,
             trust_remote_code=True,
         )
@@ -377,7 +366,7 @@ def load_critic_from_config(config_path: str) -> CriticModel:
 
     critic = CriticModel(
         model_name=model_config.get('base_model', 'meta-llama/Llama-2-7b-hf'),
-        device='cuda' if torch.cuda.is_available() else 'cpu',
+        device=get_optimal_device(prefer_gpu=True, verbose=False),
         load_in_4bit=quantization_config.get('load_in_4bit', True),
     )
 

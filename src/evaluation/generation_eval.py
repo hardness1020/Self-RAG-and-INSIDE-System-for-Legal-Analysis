@@ -417,3 +417,5 @@ if __name__ == "__main__":
     print("  - FactScore: Factual accuracy using retrieved passages")
     print("  - Utility Score: Overall response quality (from reflection tokens)")
     print("  - ROUGE Scores: Lexical overlap with reference answers")
+
+    main()

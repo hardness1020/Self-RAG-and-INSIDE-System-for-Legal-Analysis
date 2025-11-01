@@ -2,8 +2,8 @@
 
 # Base model
 model:
-  base_model: "meta-llama/Llama-2-7b-hf"  # Options: Llama-2-7b-hf, mistralai/Mistral-7B-v0.1
-  model_type: "llama"
+  base_model: "Qwen/Qwen2.5-1.5B-Instruct"  # Non-gated model for macOS compatibility
+  model_type: "qwen"
   cache_dir: "models/base"
 
 # Quantization (for memory efficiency)
@@ -24,7 +24,7 @@ lora:
 
 # Training data
 data:
-  training_data_dir: "data/training/generator_data"
+  training_data_dir: "data/training"
   num_samples: 5000            # Number of augmented training samples
   validation_split: 0.1
   max_seq_length: 1024         # Longer context for generation
@@ -70,7 +70,7 @@ training:
   save_total_limit: 3
   fp16: false
   bf16: false
-  optim: "paged_adamw_32bit"
+  optim: "adamw_torch"  # Changed from paged_adamw_32bit (requires bitsandbytes)
   gradient_checkpointing: true
   max_grad_norm: 0.3
 
@@ -105,7 +105,7 @@ inside:
 
   # Internal states extraction during generation
   extract_internal_states: true
-  target_layers: [16]  # Middle layer for Llama-2-7B (32 layers total)
+  target_layers: [14]  # Middle layer for Qwen2.5-1.5B (28 layers total)
 
   # EigenScore hallucination detection
   eigenscore:

@@ -330,3 +330,5 @@ if __name__ == "__main__":
     print("  - Recall@k: Fraction of relevant docs that are retrieved")
     print("  - MRR: Mean Reciprocal Rank of first relevant doc")
     print("  - MAP: Mean Average Precision across all queries")
+
+    main()

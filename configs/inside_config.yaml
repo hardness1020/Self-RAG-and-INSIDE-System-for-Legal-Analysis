@@ -26,8 +26,8 @@ eigenscore:
 # Internal States Extraction
 internal_states:
   # Target layers to extract from (null = use middle layer automatically)
-  # For Llama-2-7B with 32 layers, middle layer is 16
-  target_layers: [16]
+  # For Qwen2.5-1.5B with 28 layers, middle layer is 14
+  target_layers: [14]
 
   # Position to extract embeddings from ('last', 'first', 'mean')
   extraction_position: 'last'
@@ -141,7 +141,7 @@ selfrag_integration:
   enabled: true
 
   # Layers to hook for internal state extraction during generation
-  hook_layers: [16]
+  hook_layers: [14]
 
   # Whether to add INTENT reflection token
   use_intent_token: true
@@ -175,7 +175,7 @@ experimental:
   multi_layer_eigenscore: false
 
   # Layers to use for multi-layer EigenScore
-  multi_layer_targets: [12, 16, 20]
+  multi_layer_targets: [10, 14, 18]
 
   # Use attention-weighted sentence embeddings
   attention_weighted_embeddings: false

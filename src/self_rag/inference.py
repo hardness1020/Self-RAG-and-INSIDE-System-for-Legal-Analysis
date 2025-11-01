@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from retrieval.retriever import LegalRetriever, load_retriever_from_config
 from self_rag.generator import SelfRAGGenerator, load_generator_from_config
+from self_rag.critic import CriticModel, load_critic_from_config
 from self_rag.reflection_tokens import ReflectionTokenizer, RetrieveToken
 
 
@@ -34,6 +35,7 @@ class SelfRAGPipeline:
         self,
         generator: SelfRAGGenerator,
         retriever: LegalRetriever,
+        critic: Optional[CriticModel] = None,
         adaptive_retrieval: bool = True,
         max_retrieval_steps: int = 3,
     ):
@@ -43,11 +45,13 @@ class SelfRAGPipeline:
         Args:
             generator: Self-RAG generator model
             retriever: Legal document retriever
+            critic: Optional critic model for generating reflection tokens
             adaptive_retrieval: Whether to use adaptive retrieval
             max_retrieval_steps: Maximum number of retrieval steps
         """
         self.generator = generator
         self.retriever = retriever
+        self.critic = critic
         self.adaptive_retrieval = adaptive_retrieval
         self.max_retrieval_steps = max_retrieval_steps
 
@@ -114,6 +118,26 @@ class SelfRAGPipeline:
         result['answer'] = parsed['text']
         result['reflection'] = parsed['reflection']
         result['raw_response'] = parsed['raw_response']
+
+        # If critic model is available and generator didn't produce reflection tokens,
+        # use critic to generate them
+        if self.critic is not None:
+            # Check if reflection tokens are missing (all None)
+            has_tokens = any(v is not None for v in parsed['reflection'].values())
+            if not has_tokens:
+                # Get the best retrieved passage if available
+                passage = None
+                if result['retrieved_passages']:
+                    passage = result['retrieved_passages'][0]['text']
+
+                # Use critic to predict reflection tokens
+                critic_predictions = self.critic.predict_all_tokens(
+                    question=question,
+                    passage=passage,
+                    answer=result['answer'],
+                )
+                # Update reflection with critic predictions
+                result['reflection'].update(critic_predictions)
 
         # Score response
         result['score'] = self.generator.score_response(response)
@@ -192,6 +216,9 @@ def load_pipeline_from_config(
     generator_config_path: str,
     retriever_index_dir: Optional[str] = None,
     generator_weights_path: Optional[str] = None,
+    critic_config_path: Optional[str] = None,
+    critic_weights_path: Optional[str] = None,
+    use_critic: bool = True,
 ) -> SelfRAGPipeline:
     """
     Load complete pipeline from configuration files.
@@ -201,6 +228,9 @@ def load_pipeline_from_config(
         generator_config_path: Path to generator config YAML
         retriever_index_dir: Directory with FAISS index (optional)
         generator_weights_path: Path to generator LoRA weights (optional)
+        critic_config_path: Path to critic config YAML (optional)
+        critic_weights_path: Path to critic LoRA weights (optional)
+        use_critic: Whether to load and use critic for reflection tokens (default: True)
 
     Returns:
         Configured SelfRAGPipeline
@@ -223,6 +253,22 @@ def load_pipeline_from_config(
     generator = load_generator_from_config(generator_config_path)
     generator.load_model(lora_weights_path=generator_weights_path)
 
+    # Load critic (optional but recommended for reflection tokens)
+    critic = None
+    if use_critic:
+        print("\n3. Loading critic model for reflection tokens...")
+        try:
+            # Use provided config or default to critic_config.yaml
+            if critic_config_path is None:
+                critic_config_path = 'configs/critic_config.yaml'
+
+            critic = load_critic_from_config(critic_config_path)
+            critic.load_model(lora_weights_path=critic_weights_path)
+            print("   Critic model loaded successfully")
+        except Exception as e:
+            print(f"   Warning: Could not load critic model: {e}")
+            print("   Continuing without critic - reflection tokens may be unavailable")
+
     # Load generator config for adaptive retrieval settings
     with open(generator_config_path, 'r') as f:
         gen_config = yaml.safe_load(f)
@@ -234,6 +280,7 @@ def load_pipeline_from_config(
     pipeline = SelfRAGPipeline(
         generator=generator,
         retriever=retriever,
+        critic=critic,
         adaptive_retrieval=adaptive_retrieval,
         max_retrieval_steps=3,
     )

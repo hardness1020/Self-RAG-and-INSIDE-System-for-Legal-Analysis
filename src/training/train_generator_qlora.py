@@ -19,7 +19,6 @@ from datasets import Dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     TrainingArguments,
     Trainer,
     DataCollatorForLanguageModeling,
@@ -27,7 +26,6 @@ from transformers import (
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_kbit_training,
 )
 from tqdm import tqdm
 
@@ -36,6 +34,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from self_rag.reflection_tokens import ReflectionTokenizer
 from self_rag.critic import CriticModel
+from utils.device_utils import get_optimal_device
 
 
 def load_and_augment_data(
@@ -158,6 +157,10 @@ def train_generator(
     print("=" * 80)
     print(f"\nConfiguration loaded from: {config_path}")
 
+    # Get project root directory (configs directory is one level below project root)
+    config_dir = Path(config_path).parent.resolve()
+    project_root = config_dir.parent  # Go up one level from configs/ to project root
+
     # Extract config sections
     model_config = config.get('model', {})
     quant_config = config.get('quantization', {})
@@ -165,9 +168,21 @@ def train_generator(
     data_config = config.get('data', {})
     training_config = config.get('training', {})
 
-    # Setup device
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"\nUsing device: {device}")
+    # Resolve relative paths based on project root
+    if 'training_data_dir' in data_config:
+        data_dir = Path(data_config['training_data_dir'])
+        if not data_dir.is_absolute():
+            data_config['training_data_dir'] = str((project_root / data_dir).resolve())
+            print(f"Resolved training_data_dir: {data_config['training_data_dir']}")
+
+    if 'output_dir' in training_config:
+        output_dir = Path(training_config['output_dir'])
+        if not output_dir.is_absolute():
+            training_config['output_dir'] = str((project_root / output_dir).resolve())
+            print(f"Resolved output_dir: {training_config['output_dir']}")
+
+    # Setup device (supports MPS for Mac GPU)
+    device = get_optimal_device(prefer_gpu=True, verbose=True)
 
     # Load tokenizer
     print("\n1. Loading tokenizer...")
@@ -217,32 +232,30 @@ def train_generator(
         eval_dataset = None
         print(f"   Train: {len(train_dataset)}")
 
-    # Load model with quantization
+    # Load model (4-bit quantization disabled for macOS compatibility)
     step_num = 3 if not critic_weights_path else 4
-    print(f"\n{step_num}. Loading base model with 4-bit quantization...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=quant_config.get('load_in_4bit', True),
-        bnb_4bit_compute_dtype=getattr(torch, quant_config.get('bnb_4bit_compute_dtype', 'float16')),
-        bnb_4bit_quant_type=quant_config.get('bnb_4bit_quant_type', 'nf4'),
-        bnb_4bit_use_double_quant=quant_config.get('bnb_4bit_use_double_quant', True),
-    )
+    print(f"\n{step_num}. Loading base model...")
+    print("   Note: 4-bit quantization disabled for macOS compatibility")
 
     model = AutoModelForCausalLM.from_pretrained(
         model_config['base_model'],
-        quantization_config=bnb_config,
-        device_map="auto",
         trust_remote_code=True,
     )
+    model = model.to(device)
 
     # Resize embeddings
     model.resize_token_embeddings(len(tokenizer))
 
-    # Prepare for k-bit training
-    step_num += 1
-    print(f"\n{step_num}. Preparing model for QLoRA training...")
-    model = prepare_model_for_kbit_training(model)
+    # Enable gradient checkpointing for memory efficiency
+    model.gradient_checkpointing_enable()
 
-    # Setup LoRA (more target modules for generator)
+    # Ensure model parameters require gradients
+    for param in model.parameters():
+        param.requires_grad = False  # Freeze base model
+
+    # Setup LoRA (without k-bit training preparation for macOS)
+    step_num += 1
+    print(f"\n{step_num}. Preparing model for LoRA training...")
     peft_config = LoraConfig(
         r=lora_config.get('r', 16),
         lora_alpha=lora_config.get('lora_alpha', 32),
@@ -302,7 +315,7 @@ def train_generator(
         save_steps=training_config.get('save_steps', 200),
         eval_steps=training_config.get('eval_steps', 200),
         save_total_limit=training_config.get('save_total_limit', 3),
-        evaluation_strategy="steps" if eval_dataset else "no",
+        eval_strategy="steps" if eval_dataset else "no",  # Changed from evaluation_strategy
         fp16=training_config.get('fp16', False),
         bf16=training_config.get('bf16', False),
         optim=training_config.get('optim', 'paged_adamw_32bit'),

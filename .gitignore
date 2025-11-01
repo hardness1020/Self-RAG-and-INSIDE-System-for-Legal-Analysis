@@ -46,11 +46,7 @@ env/
 .env.*.local
 
 # Model files and checkpoints
-models/*.bin
-models/*.pt
-models/*.pth
-models/*.ckpt
-models/*.safetensors
+models/
 *.bin
 *.pt
 *.pth
@@ -63,6 +59,7 @@ models/*.safetensors
 # Data files
 data/raw/*
 data/processed/*
+data/training/*
 data/*.csv
 data/*.json
 data/*.jsonl

@@ -1426,12 +1426,524 @@ model.config.use_memory_efficient_attention = True
 
 ---
 
+## LegalBench-RAG Benchmark Integration
+
+### Overview
+
+LegalBench-RAG is the first benchmark specifically designed for evaluating retrieval systems in the legal domain. This section covers complete setup, evaluation, and integration with your Self-RAG system.
+
+**Dataset Characteristics:**
+- **6,858 queries** (or 776 mini version) with character-level precision
+- **714 legal documents** spanning 79M+ characters
+- **Human-annotated** by legal experts
+- **4 subdatasets**: ContractNLI, CUAD, MAUD, PrivacyQA
+- **Snippet-level ground truth**: Exact character spans for relevant passages
+
+**Paper**: Pipitone & Houir Alami (2024) - arXiv:2408.10343
+
+---
+
+### Setup Instructions
+
+#### Step 1: Download Dataset
+
+```bash
+# Navigate to data directory
+cd data
+
+# Clone LegalBench-RAG repository
+git clone https://github.com/zeroentropy-cc/legalbenchrag legalbench-rag
+
+# Verify structure
+ls legalbench-rag/
+# Should show: corpus/, queries.json, README.md
+```
+
+**Verify corpus structure:**
+```bash
+ls legalbench-rag/corpus/
+# Should show: contractnli/, cuad/, maud/, privacyqa/
+```
+
+---
+
+#### Step 2: Index the Corpus
+
+Before evaluation, index the LegalBench-RAG corpus using your retrieval system:
+
+```bash
+# Create output directory
+mkdir -p data/legalbench-rag/embeddings
+
+# Index the corpus
+uv run python -m src.retrieval.indexing \
+    --corpus-dir data/legalbench-rag/corpus \
+    --output-dir data/legalbench-rag/embeddings \
+    --config configs/retrieval_config.yaml
+```
+
+**What this does:**
+1. Reads all `.txt` files from corpus subdirectories
+2. Chunks documents using RCTS (512 chars, 50 overlap)
+3. Generates embeddings using configured model
+4. Creates FAISS index
+5. Saves to embeddings directory
+
+**Time estimate**: 10-30 minutes on Mac GPU, 30-90 minutes on CPU
+
+**Progress monitoring:**
+```bash
+# Check index was created
+ls data/legalbench-rag/embeddings/
+# Should show: index.faiss, metadata.json, chunks.json
+```
+
+---
+
+#### Step 3: Run Evaluation
+
+Three evaluation modes available:
+
+**Option A: Mini Version (Recommended for Testing)**
+
+776 queries (194 per dataset), takes 10-30 minutes:
+
+```bash
+uv run python -m src.evaluation.legalbench_eval \
+    --config configs/legalbench_config.yaml \
+    --retrieval-config configs/retrieval_config.yaml \
+    --index-dir data/legalbench-rag/embeddings \
+    --output results/legalbench_mini.json \
+    --use-mini
+```
+
+**Option B: Full Evaluation**
+
+6,858 queries, takes 1-3 hours:
+
+```bash
+uv run python -m src.evaluation.legalbench_eval \
+    --config configs/legalbench_config.yaml \
+    --retrieval-config configs/retrieval_config.yaml \
+    --index-dir data/legalbench-rag/embeddings \
+    --output results/legalbench_full.json
+```
+
+**Option C: Document-Level Only (Fastest)**
+
+Skip snippet-level metrics for faster results:
+
+```bash
+uv run python -m src.evaluation.legalbench_eval \
+    --config configs/legalbench_config.yaml \
+    --retrieval-config configs/retrieval_config.yaml \
+    --index-dir data/legalbench-rag/embeddings \
+    --output results/legalbench_fast.json \
+    --use-mini \
+    --no-snippets
+```
+
+---
+
+### Understanding Evaluation Results
+
+#### Sample Output
+
+```
+==================================================================================================
+LEGALBENCH-RAG EVALUATION RESULTS
+==================================================================================================
+
+Number of queries evaluated: 776
+
+OVERALL METRICS
+--------------------------------------------------------------------------------------------------
+
+Document-level Precision@k:
+  P@ 1:  6.41%
+  P@ 4:  5.76%
+  P@16:  3.09%
+  P@64:  1.45%
+
+Document-level Recall@k:
+  R@ 1:  4.94%
+  R@ 4: 16.90%
+  R@16: 37.06%
+  R@64: 62.22%
+
+Snippet-level Precision@k (IoU >= 0.5):
+  P@ 1:  3.21%
+  P@ 4:  2.84%
+  ...
+
+PER-DATASET BREAKDOWN
+--------------------------------------------------------------------------------------------------
+
+PrivacyQA (194 queries)
+  Document Precision@k: @1:14.38% | @4:12.34% | @16: 6.06% | @64: 2.81%
+  Document Recall@k:    @1: 8.85% | @4:27.92% | @16:55.12% | @64:84.19%
+  ...
+
+PAPER BASELINE COMPARISON:
+  Overall:     Precision@1: 6.41%  | Recall@64: 62.22%
+  PrivacyQA:   Precision@1: 14.38% | Recall@64: 84.19%
+  MAUD:        Precision@1: 2.65%  | Recall@64: 28.28%
+==================================================================================================
+```
+
+#### Metric Definitions
+
+**Document-Level Metrics** (coarse-grained):
+
+- **Precision@k**: Of top-k retrieved docs, what % are relevant?
+  - Formula: `# relevant docs in top-k / k`
+  - High precision = Few false positives
+  - Low precision = Retrieving irrelevant documents
+
+- **Recall@k**: Of all relevant docs, what % are in top-k?
+  - Formula: `# relevant docs in top-k / # total relevant`
+  - High recall = Finding most relevant documents
+  - Low recall = Missing relevant documents
+
+**Snippet-Level Metrics** (fine-grained):
+
+- **Snippet Precision@k**: Of top-k chunks, what % match ground truth spans?
+  - Uses IoU (Intersection over Union) for character-level overlap
+  - Default threshold: IoU ≥ 0.5 (50% overlap)
+  - More precise than document-level
+
+- **Snippet Recall@k**: Of all ground truth snippets, what % are found?
+  - Tests exact passage retrieval, not just document retrieval
+
+**IoU Calculation:**
+```
+IoU = intersection_length / union_length
+intersection_length = overlap between retrieved chunk and ground truth
+union_length = total span covered by both
+```
+
+#### Per-Dataset Difficulty
+
+The benchmark includes 4 subdatasets of varying difficulty:
+
+| Dataset | Domain | Difficulty | Baseline P@1 | Baseline R@64 |
+|---------|--------|-----------|--------------|---------------|
+| PrivacyQA | Privacy policies | ⭐ Easy | 14.38% | 84.19% |
+| ContractNLI | NDAs | ⭐⭐ Medium | 6.63% | 61.72% |
+| CUAD | Contracts | ⭐⭐⭐ Hard | 1.97% | 74.70% |
+| MAUD | M&A docs | ⭐⭐⭐⭐ Very Hard | 2.65% | 28.28% |
+
+**Why difficulty varies:**
+- PrivacyQA: Consumer-facing language, straightforward
+- ContractNLI: Standard legal language
+- CUAD: Complex private contracts, specialized terms
+- MAUD: Highly technical M&A jargon, longest documents
+
+---
+
+### Configuration
+
+LegalBench-RAG configuration in `configs/legalbench_config.yaml`:
+
+```yaml
+# Dataset paths
+corpus_dir: 'data/legalbench-rag/corpus'
+queries_file: 'data/legalbench-rag/queries.json'
+
+# Version (full or mini)
+use_mini: false  # Set true for 776 queries
+
+# K-values for metrics (from paper)
+k_values: [1, 2, 4, 8, 16, 32, 64]
+
+# Snippet matching threshold
+min_iou: 0.5  # 0.3 = lenient, 0.5 = moderate, 0.7 = strict
+
+# Output
+output_dir: 'results/legalbench'
+```
+
+**Adjusting IoU threshold:**
+- **0.3**: More lenient, counts partial matches
+- **0.5** (default): Moderate overlap required
+- **0.7**: Strict, requires high overlap
+
+---
+
+### Python API Usage
+
+```python
+from src.data.legalbench_loader import LegalBenchRAGLoader
+from src.evaluation.legalbench_eval import evaluate_legalbench_rag
+from src.retrieval.retriever import load_retriever_from_config
+
+# Load retriever
+retriever = load_retriever_from_config("configs/retrieval_config.yaml")
+retriever.load_index("data/legalbench-rag/embeddings")
+
+# Load LegalBench-RAG dataset
+loader = LegalBenchRAGLoader(
+    corpus_dir="data/legalbench-rag/corpus",
+    queries_file="data/legalbench-rag/queries.json",
+    use_mini=True
+)
+loader.load_queries()
+
+# Get corpus statistics
+stats = loader.get_corpus_statistics()
+print(f"Queries: {stats['num_queries']}")
+print(f"By dataset: {stats['queries_by_dataset']}")
+
+# Evaluate
+results = evaluate_legalbench_rag(
+    retriever=retriever,
+    loader=loader,
+    k_values=[1, 2, 4, 8, 16, 32, 64],
+    min_iou=0.5,
+    evaluate_snippets=True
+)
+
+# Access results
+print(f"Overall P@1: {results['document_precision@k'][1]:.2%}")
+print(f"Overall R@64: {results['document_recall@k'][64]:.2%}")
+
+# Per-dataset results
+for dataset, metrics in results['per_dataset'].items():
+    print(f"{dataset}: P@1={metrics['document_precision@k'][1]:.2%}")
+```
+
+**Filter by specific dataset:**
+```python
+# Evaluate only on MAUD (hardest dataset)
+loader.load_queries()
+maud_queries = [q for q in loader.queries if q.dataset_source == 'MAUD']
+loader.queries = maud_queries
+
+results = evaluate_legalbench_rag(retriever, loader)
+```
+
+---
+
+### Baseline Comparison
+
+Compare your results to the paper's published baselines (Table 5 - RCTS method):
+
+| Metric | Paper Baseline | Target | Interpretation |
+|--------|---------------|--------|----------------|
+| Overall P@1 | 6.41% | > 6% | Match or beat baseline |
+| Overall R@64 | 62.22% | > 60% | Good recall ceiling |
+| PrivacyQA P@1 | 14.38% | > 12% | Easier dataset performance |
+| MAUD P@1 | 2.65% | > 2% | Hardest dataset (low is expected) |
+
+**Performance indicators:**
+
+✅ **Good performance:**
+- Precision@1 matches or exceeds baseline
+- Recall@64 > 60% (retrieving most relevant docs)
+- PrivacyQA scores higher than MAUD (easier should perform better)
+- Snippet metrics within 50-70% of document metrics
+
+❌ **Needs improvement:**
+- Precision@1 < 5% → Too many false positives, check chunking/embeddings
+- Recall@64 < 50% → Missing relevant documents, increase top_k
+- Snippet metrics ≪ document metrics → Chunks too imprecise
+- All datasets perform equally → Intent-aware strategies not working
+
+---
+
+### Integration with Self-RAG System
+
+LegalBench-RAG evaluates the **retrieval component** of your Self-RAG pipeline. Use with the complete system:
+
+```python
+from src.self_rag.inference import load_pipeline_from_config
+
+# Load complete Self-RAG pipeline
+pipeline = load_pipeline_from_config(
+    retrieval_config_path="configs/retrieval_config.yaml",
+    generator_config_path="configs/generator_config.yaml",
+    retriever_index_dir="data/legalbench-rag/embeddings",
+    generator_weights_path="models/generator_lora/final"
+)
+
+# Answer LegalBench-RAG query
+query = "Consider the Software License Agreement; Are licenses non-transferable?"
+result = pipeline.answer_question(query)
+
+print(f"Answer: {result['answer']}")
+print(f"Reflection: {result['reflection']}")
+print(f"Retrieval quality: {result.get('retrieval_score', 'N/A')}")
+```
+
+**Evaluate end-to-end:**
+```bash
+# First, evaluate retrieval on LegalBench-RAG
+uv run python -m src.evaluation.legalbench_eval --use-mini ...
+
+# Then, evaluate generation quality
+uv run python -m src.evaluation.generation_eval \
+    --test-data data/legalbench-rag/queries.json \
+    ...
+```
+
+---
+
+### Troubleshooting
+
+**Issue: FileNotFoundError - Corpus directory not found**
+
+```bash
+Solution:
+# Verify download
+ls data/legalbench-rag/corpus/
+# If empty, re-clone
+rm -rf data/legalbench-rag
+git clone https://github.com/zeroentropy-cc/legalbenchrag data/legalbench-rag
+```
+
+**Issue: Index not found**
+
+```bash
+Solution:
+# Run indexing step first
+uv run python -m src.retrieval.indexing \
+    --corpus-dir data/legalbench-rag/corpus \
+    --output-dir data/legalbench-rag/embeddings \
+    --config configs/retrieval_config.yaml
+```
+
+**Issue: Evaluation very slow**
+
+```bash
+Solutions:
+1. Use mini version: --use-mini
+2. Skip snippet metrics: --no-snippets
+3. Reduce k_values in config: k_values: [1, 4, 16, 64]
+4. Use Mac GPU if available (check configs/retrieval_config.yaml device: "mps")
+```
+
+**Issue: Poor performance on MAUD dataset**
+
+```
+Expected behavior: MAUD is the hardest dataset (2.65% P@1 in paper)
+
+If you're getting < 1%:
+1. Check chunk_size (try 500-512 chars)
+2. Try better embedding model (legal-specific if available)
+3. Implement reranking
+4. Increase chunk_overlap to 100
+```
+
+**Issue: Out of memory during indexing**
+
+```bash
+Solutions:
+1. Process documents in smaller batches
+2. Use smaller embedding model (all-MiniLM-L6-v2)
+3. Reduce batch_size in retrieval config
+4. Close other applications
+```
+
+**Issue: Snippet Precision much lower than Document Precision**
+
+```
+This is expected! Snippet-level is harder than document-level.
+
+If snippet precision is < 30% of document precision:
+1. Reduce chunk_size for more precise chunks
+2. Increase chunk_overlap to improve coverage
+3. Adjust min_iou threshold (try 0.3 for more lenient matching)
+```
+
+---
+
+### For DSC261 Project Report
+
+**Recommended workflow:**
+
+**Week 1**: Baseline Evaluation
+```bash
+# Download and index
+git clone https://github.com/zeroentropy-cc/legalbenchrag data/legalbench-rag
+uv run python -m src.retrieval.indexing \
+    --corpus-dir data/legalbench-rag/corpus \
+    --output-dir data/legalbench-rag/embeddings \
+    --config configs/retrieval_config.yaml
+
+# Run mini evaluation
+uv run python -m src.evaluation.legalbench_eval \
+    --use-mini --output results/week1_baseline.json
+```
+
+**Week 2**: Full Evaluation & Analysis
+```bash
+# Run full evaluation
+uv run python -m src.evaluation.legalbench_eval \
+    --output results/week2_full.json
+
+# Analyze per-dataset results
+# Which datasets are hardest? Where does your system struggle?
+```
+
+**Week 3**: Improvements & Iteration
+- Try different chunk sizes (500, 512, 1024)
+- Experiment with embedding models
+- Test INSIDE-enhanced retrieval
+- Compare with/without intent-aware strategies
+
+**Week 4**: Final Results & Report
+- Run final evaluation on full dataset
+- Create comparison tables and visualizations
+- Include in project report
+
+**Tables to include in report:**
+
+**Table 1: Overall Performance vs Baseline**
+```
+| Metric | Paper (RCTS) | Your System | Δ |
+|--------|-------------|-------------|---|
+| P@1 | 6.41% | ___ | ___ |
+| P@4 | 5.76% | ___ | ___ |
+| R@16 | 37.06% | ___ | ___ |
+| R@64 | 62.22% | ___ | ___ |
+```
+
+**Table 2: Per-Dataset Breakdown**
+```
+| Dataset | Your P@1 | Baseline | Your R@64 | Baseline |
+|---------|----------|----------|-----------|----------|
+| PrivacyQA | ___ | 14.38% | ___ | 84.19% |
+| ContractNLI | ___ | 6.63% | ___ | 61.72% |
+| CUAD | ___ | 1.97% | ___ | 74.70% |
+| MAUD | ___ | 2.65% | ___ | 28.28% |
+```
+
+**Figures to create:**
+1. Precision-Recall curves at different k values
+2. Per-dataset comparison bar charts
+3. Document-level vs snippet-level metrics
+4. Impact of INSIDE enhancements (if applicable)
+
+**Analysis points:**
+1. Which datasets are hardest? (Expected: MAUD > CUAD > ContractNLI > PrivacyQA)
+2. Where does precision drop? (Document vs snippet level)
+3. How does your system compare to baseline?
+4. What's the recall ceiling? (R@64 indicates theoretical maximum)
+
+**Citation for report:**
+```
+Pipitone, N., & Houir Alami, G. (2024). LegalBench-RAG: A Benchmark for
+Retrieval-Augmented Generation in the Legal Domain. arXiv:2408.10343.
+```
+
+---
+
 ## Additional Resources
 
 ### Research Papers
 - **Self-RAG Paper**: https://arxiv.org/abs/2310.11511
 - **INSIDE Framework**: Internal States for Hallucination Detection (see references/)
-- **LegalBench-RAG**: https://arxiv.org/abs/2309.03400
+- **LegalBench-RAG Paper**: https://arxiv.org/abs/2408.10343
 - **QLoRA Paper**: https://arxiv.org/abs/2305.14314
 
 ### Tools & Libraries

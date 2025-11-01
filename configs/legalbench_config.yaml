@@ -1,0 +1,67 @@
+# LegalBench-RAG Benchmark Configuration
+#
+# Configuration for evaluating retrieval systems on the LegalBench-RAG benchmark.
+# Based on: "LegalBench-RAG: A Benchmark for Retrieval-Augmented Generation
+#           in the Legal Domain" (Pipitone & Houir Alami, 2024)
+#
+# Dataset available at: https://github.com/zeroentropy-cc/legalbenchrag
+
+# Dataset paths
+corpus_dir: 'data/legalbench-rag/corpus'
+queries_file: 'data/legalbench-rag/queries.json'
+
+# Dataset version
+# - use_mini: false for full dataset (6,858 queries)
+# - use_mini: true for mini version (776 queries, faster iteration)
+use_mini: false
+
+# Evaluation parameters
+k_values: [1, 2, 4, 8, 16, 32, 64]  # K values for Precision@k and Recall@k (from paper)
+
+# Snippet-level evaluation
+# min_iou: Minimum Intersection over Union (IoU) for snippet matching
+# Range: 0.0 to 1.0
+# - 0.5: Moderate overlap required (recommended)
+# - 0.3: More lenient matching
+# - 0.7: Stricter matching
+min_iou: 0.5
+
+# Dataset statistics (from paper)
+# Full version:
+#   - Total queries: 6,858
+#   - Total documents: 714
+#   - Total characters: 79,704,214
+#   - ContractNLI: 946 queries, 95 documents
+#   - CUAD: 4,042 queries, 462 documents
+#   - MAUD: 1,676 queries, 150 documents
+#   - PrivacyQA: 194 queries, 7 documents
+#
+# Mini version:
+#   - Total queries: 776 (194 per dataset)
+#   - Total documents: 72
+#   - Total characters: 8,682,104
+
+# Expected baseline performance (from paper Table 5 - RCTS method):
+# Overall:
+#   - Precision@1: 6.41%
+#   - Precision@4: 5.76%
+#   - Recall@16: 37.06%
+#   - Recall@64: 62.22%
+#
+# Per dataset (Precision@1 / Recall@64):
+#   - PrivacyQA: 14.38% / 84.19% (easiest)
+#   - ContractNLI: 6.63% / 61.72%
+#   - CUAD: 1.97% / 74.70%
+#   - MAUD: 2.65% / 28.28% (hardest - complex legal jargon)
+
+# Output
+output_dir: 'results/legalbench'
+
+# Visualization
+# Generate plots comparing performance across datasets
+generate_plots: true
+plot_metrics: ['precision', 'recall']  # Which metrics to plot
+
+# Comparison to paper baselines
+compare_to_baseline: true
+baseline_method: 'RCTS'  # Recursive Character Text Splitter (best from paper)

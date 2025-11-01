@@ -527,11 +527,82 @@ print(f"Using device: {device}")
 
 ---
 
+## LegalBench-RAG Benchmark
+
+This project now includes support for the **LegalBench-RAG** benchmark dataset, the first dedicated benchmark for evaluating retrieval systems in the legal domain.
+
+### Dataset Overview
+
+- **6,858 queries** over 714 legal documents (79M+ characters)
+- **Human-annotated** by legal experts with character-level precision
+- **4 subdatasets**: ContractNLI, CUAD, MAUD, PrivacyQA
+- **Mini version**: 776 queries (194 per dataset) for rapid iteration
+- **Public dataset**: https://github.com/zeroentropy-cc/legalbenchrag
+
+### Quick Start with LegalBench-RAG
+
+```bash
+# 1. Download the dataset
+git clone https://github.com/zeroentropy-cc/legalbenchrag data/legalbench-rag
+
+# 2. Index the LegalBench-RAG corpus
+uv run python -m src.retrieval.indexing \
+    --corpus-dir data/legalbench-rag/corpus \
+    --output-dir data/legalbench-rag/embeddings \
+    --config configs/retrieval_config.yaml
+
+# 3. Evaluate your retrieval system
+uv run python -m src.evaluation.legalbench_eval \
+    --config configs/legalbench_config.yaml \
+    --retrieval-config configs/retrieval_config.yaml \
+    --index-dir data/legalbench-rag/embeddings \
+    --output results/legalbench_results.json
+```
+
+### Evaluation Metrics
+
+LegalBench-RAG provides both **document-level** and **snippet-level** metrics:
+
+**Document-level** (standard IR):
+- Precision@k: Fraction of retrieved docs that are relevant
+- Recall@k: Fraction of relevant docs that are retrieved
+
+**Snippet-level** (character-precise):
+- Snippet Precision@k: Fraction of retrieved chunks matching ground truth spans
+- Snippet Recall@k: Fraction of ground truth spans found in top-k
+- Uses IoU (Intersection over Union) for span overlap
+
+**Per-dataset breakdown**: Metrics aggregated by ContractNLI, CUAD, MAUD, PrivacyQA
+
+### Expected Performance (Paper Baselines)
+
+Using RCTS chunking (our default method):
+
+| Dataset | Precision@1 | Recall@64 | Difficulty |
+|---------|------------|-----------|------------|
+| PrivacyQA | 14.38% | 84.19% | ⭐ Easy |
+| ContractNLI | 6.63% | 61.72% | ⭐⭐ Medium |
+| CUAD | 1.97% | 74.70% | ⭐⭐⭐ Hard |
+| MAUD | 2.65% | 28.28% | ⭐⭐⭐⭐ Very Hard |
+| **Overall** | **6.41%** | **62.22%** | - |
+
+The benchmark is challenging due to:
+- Precise snippet-level requirements (not just document retrieval)
+- Complex legal jargon and terminology
+- Long documents with subtle distinctions
+
+### Why This Matters for Your Project
+
+1. **Academic Rigor**: Evaluate on a peer-reviewed, published benchmark
+2. **Reproducibility**: Compare results against established baselines
+3. **Real-world Relevance**: Legal domain is safety-critical (hallucinations have consequences)
+4. **Precision Focus**: Measures exact retrieval accuracy, not just coarse recall
+
 ## References
 
 1. Asai et al. (2023). "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection"
 2. **INSIDE: Hallucination Detection via Internal States** - Framework for semantic consistency analysis
-3. Nay et al. (2023). "LegalBench-RAG: A Benchmark for Retrieval-Augmented Generation in Legal Domain"
+3. **Pipitone & Houir Alami (2024). "LegalBench-RAG: A Benchmark for Retrieval-Augmented Generation in Legal Domain"** - First benchmark for legal RAG retrieval
 4. Dettmers et al. (2023). "QLoRA: Efficient Finetuning of Quantized LLMs"
 
 ## How INSIDE Enhances Self-RAG
