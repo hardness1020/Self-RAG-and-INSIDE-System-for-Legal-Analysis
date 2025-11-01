@@ -436,88 +436,6 @@ print(f"Using device: {device}")
 
 ---
 
-## What's Included
-
-### Complete Implementation (40+ files, 12,000+ lines)
-
-**Core Modules** (16 files):
-- Retrieval pipeline: chunking, embedding, indexing, retriever, intent-aware retriever
-- Self-RAG system: reflection tokens (5 tokens), critic, generator, INSIDE-enhanced generator, inference
-- **INSIDE framework**: internal states, EigenScore, feature clipping, intent detection, hallucination detector
-- Training: label generation, critic training, generator training
-- Evaluation: retrieval metrics, generation metrics, INSIDE evaluation
-
-**Configuration** (5 files):
-- Retrieval, critic, generator, and **INSIDE configs**
-- pyproject.toml for uv
-
-**Sample Data** (3 files):
-- 10 legal documents about negligence
-- 10 Q&A pairs with passages
-- 10 test queries with ground truth
-
-**Documentation**:
-- This README (overview and quick reference) + comprehensive GUIDE.md (detailed implementation)
-- Inline docstrings throughout all modules
-- **9 tutorial notebooks** with examples (6 core + 3 INSIDE)
-
----
-
-## For Your Academic Project (DSC261)
-
-### Requirements Met ✓
-- Complete implementation following research papers
-- Training infrastructure with QLoRA
-- Comprehensive evaluation framework
-- Hallucination mitigation (core feature!)
-- Documentation and reproducibility
-- Sample data for immediate testing
-- Responsible AI considerations (self-verification, citations)
-
-### Project Deliverables Ready
-- Source code (7,500+ lines)
-- Trained models (after training)
-- Evaluation results (from evaluation scripts)
-- Tutorial notebooks (6 notebooks)
-- Documentation (README + GUIDE)
-
----
-
-## Next Steps
-
-### Week 1-2: Setup & Understanding
-- ✓ Installation complete
-- Run tutorial notebooks
-- Test with sample data
-- Understand system architecture
-
-### Week 3-4: Training
-- Gather/prepare your legal corpus
-- Generate training labels
-- Train critic model
-- Train generator model
-- Test trained system
-
-### Week 5-6: Evaluation & Analysis
-- Run comprehensive evaluation
-- Compare with baselines (vanilla RAG, no RAG)
-- Analyze hallucination patterns
-- Create visualizations
-- Write project report
-
----
-
-## Tips for Success
-
-1. **Start Small**: Test with 10-100 documents before indexing full corpus
-2. **Use Sample Data**: Practice with provided samples to understand the system
-3. **Monitor Training**: Watch loss curves, save checkpoints frequently
-4. **Iterate Quickly**: Use smaller models (7B) for faster iteration
-5. **Document Findings**: Keep notes for your project report
-6. **Test Incrementally**: Verify each step works before proceeding
-
----
-
 ## Getting Help
 
 - **Comprehensive Guide**: See `GUIDE.md` for detailed implementation instructions
@@ -574,36 +492,7 @@ LegalBench-RAG provides both **document-level** and **snippet-level** metrics:
 
 **Per-dataset breakdown**: Metrics aggregated by ContractNLI, CUAD, MAUD, PrivacyQA
 
-### Expected Performance (Paper Baselines)
-
-Using RCTS chunking (our default method):
-
-| Dataset | Precision@1 | Recall@64 | Difficulty |
-|---------|------------|-----------|------------|
-| PrivacyQA | 14.38% | 84.19% | ⭐ Easy |
-| ContractNLI | 6.63% | 61.72% | ⭐⭐ Medium |
-| CUAD | 1.97% | 74.70% | ⭐⭐⭐ Hard |
-| MAUD | 2.65% | 28.28% | ⭐⭐⭐⭐ Very Hard |
-| **Overall** | **6.41%** | **62.22%** | - |
-
-The benchmark is challenging due to:
-- Precise snippet-level requirements (not just document retrieval)
-- Complex legal jargon and terminology
-- Long documents with subtle distinctions
-
-### Why This Matters for Your Project
-
-1. **Academic Rigor**: Evaluate on a peer-reviewed, published benchmark
-2. **Reproducibility**: Compare results against established baselines
-3. **Real-world Relevance**: Legal domain is safety-critical (hallucinations have consequences)
-4. **Precision Focus**: Measures exact retrieval accuracy, not just coarse recall
-
-## References
-
-1. Asai et al. (2023). "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection"
-2. **INSIDE: Hallucination Detection via Internal States** - Framework for semantic consistency analysis
-3. **Pipitone & Houir Alami (2024). "LegalBench-RAG: A Benchmark for Retrieval-Augmented Generation in Legal Domain"** - First benchmark for legal RAG retrieval
-4. Dettmers et al. (2023). "QLoRA: Efficient Finetuning of Quantized LLMs"
+---
 
 ## How INSIDE Enhances Self-RAG
 
@@ -626,12 +515,9 @@ The benchmark is challenging due to:
 
 ---
 
-## License
+## References
 
-Academic use only for DSC261 - Responsible Data Science course project.
-
----
-
-**Your complete Self-RAG + INSIDE system is ready! Start with the quick start above or dive into the notebooks.** 🚀
-
-For detailed INSIDE implementation, see `GUIDE.md` (sections 3-4) and notebooks 06-08.
+1. Asai et al. (2023). "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection"
+2. INSIDE: Hallucination Detection via Internal States - Framework for semantic consistency analysis
+3. Pipitone & Houir Alami (2024). "LegalBench-RAG: A Benchmark for Retrieval-Augmented Generation in Legal Domain" - First benchmark for legal RAG retrieval
+4. Dettmers et al. (2023). "QLoRA: Efficient Finetuning of Quantized LLMs"

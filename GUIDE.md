@@ -188,7 +188,7 @@ Predicts reflection tokens for training data:
 from src.self_rag.critic import CriticModel
 
 critic = CriticModel(
-    model_name="meta-llama/Llama-2-7b-hf",
+    model_name="Qwen/Qwen2.5-1.5B-Instruct",
     device="cpu",
     load_in_4bit=True
 )
@@ -208,7 +208,7 @@ Generates responses with reflection tokens:
 from src.self_rag.generator import SelfRAGGenerator
 
 generator = SelfRAGGenerator(
-    model_name="meta-llama/Llama-2-7b-hf",
+    model_name="Qwen/Qwen2.5-1.5B-Instruct",
     device="cpu",
     load_in_4bit=True
 )
@@ -258,7 +258,7 @@ from src.inside.internal_states import InternalStateExtractor
 
 extractor = InternalStateExtractor(
     model=model,
-    target_layers=[16],  # Middle layer for Llama-2-7B
+    target_layers=[14],  # Middle layer for Qwen2.5-1.5B (28 layers)
     extraction_position='last'
 )
 
@@ -274,7 +274,7 @@ sentence_embeddings = internal_states['sentence_embeddings']  # [num_sentences, 
 ```
 
 **Key Parameters**:
-- `target_layers`: Which layers to extract from (default: [16] for 7B models)
+- `target_layers`: Which layers to extract from (default: [14] for Qwen2.5-1.5B with 28 layers)
 - `extraction_position`: 'last', 'first', or 'mean' token position
 
 ---
@@ -538,7 +538,7 @@ uv run python -m src.training.train_critic_qlora \
 
 ```yaml
 model:
-  base_model: "meta-llama/Llama-2-7b-hf"
+  base_model: "Qwen/Qwen2.5-1.5B-Instruct"
 
 quantization:
   load_in_4bit: true
@@ -587,7 +587,7 @@ uv run python -m src.training.train_generator_qlora \
 
 ```yaml
 model:
-  base_model: "meta-llama/Llama-2-7b-hf"
+  base_model: "Qwen/Qwen2.5-1.5B-Instruct"
 
 quantization:
   load_in_4bit: true
@@ -1020,9 +1020,10 @@ eigenscore:
       procedural: 0.3
 
 internal_states:
-  target_layers: [16]  # Middle layer for 7B models
+  target_layers: [14]  # Middle layer for Qwen2.5-1.5B (28 layers)
+  # For Llama-2-7B (32 layers), use [16]
   # For 13B models, use [20]
-  # For larger models, use [layer_count // 2]
+  # For any model, use [layer_count // 2]
   extraction_position: 'last'  # 'last', 'first', or 'mean'
   batch_size: 8
 
@@ -1072,7 +1073,7 @@ combined_scoring:
    - Middle layers (around layer_count // 2) work best
    - Earlier layers: More syntactic information
    - Later layers: More semantic information
-   - Experiment with [12, 16, 20] for 7B models
+   - Experiment with [10, 14, 18] for Qwen2.5-1.5B, or [12, 16, 20] for Llama-2-7B
 
 3. **Intent Strategies**:
    - Adjust top_k based on corpus size
@@ -1114,7 +1115,7 @@ Solution:
 Solution:
 1. Reduce dataset size for testing
 2. Lower num_train_epochs to 1
-3. Use smaller base model (e.g., Llama-2-7b-hf)
+3. Use smaller base model (e.g., Qwen2.5-1.5B or Llama-2-7b)
 4. Enable gradient_checkpointing
 ```
 
@@ -1232,7 +1233,7 @@ Solution:
 1. Extract internal states only when needed (not for every query)
 2. Use single sample instead of multiple (num_samples=1)
 3. Disable feature clipping (enabled: false)
-4. Reduce target_layers to single layer [16]
+4. Reduce target_layers to single layer [14]
 5. Use batch processing for multiple queries
 ```
 
@@ -1316,7 +1317,7 @@ uv run python src/utils/device_utils.py
 ```yaml
 # For QLoRA training, may need adjustments
 model:
-  base_model: "meta-llama/Llama-2-7b-hf"
+  base_model: "Qwen/Qwen2.5-1.5B-Instruct"
 
 quantization:
   load_in_4bit: true
@@ -1337,7 +1338,7 @@ training:
 ```yaml
 # Optimized config for CPU
 model:
-  base_model: "meta-llama/Llama-2-7b-hf"  # Use 7B, not 13B
+  base_model: "Qwen/Qwen2.5-1.5B-Instruct"  # Use 1.5B for faster CPU training
 
 quantization:
   load_in_4bit: true
@@ -1354,9 +1355,9 @@ training:
 ### For GPU Systems
 
 ```yaml
-# Optimized config for GPU
+# Optimized config for GPU (can use larger models)
 model:
-  base_model: "meta-llama/Llama-2-13b-hf"  # Larger model
+  base_model: "meta-llama/Llama-2-7b-hf"  # Or Llama-2-13b-hf for more capacity
 
 quantization:
   load_in_4bit: true
