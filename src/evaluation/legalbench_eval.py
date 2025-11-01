@@ -96,7 +96,10 @@ def calculate_snippet_precision_at_k(
     num_matches = 0
 
     for chunk in top_k_chunks:
-        chunk_file = chunk.get('file_path', chunk.get('source', ''))
+        # Check top-level first, then check inside metadata dict
+        chunk_file = chunk.get('file_path') or chunk.get('source') or \
+                     chunk.get('metadata', {}).get('file_path') or \
+                     chunk.get('metadata', {}).get('source', '')
         chunk_span = chunk.get('span', (chunk.get('start_char', 0), chunk.get('end_char', 0)))
 
         # Check if this chunk matches any ground truth snippet
@@ -145,7 +148,10 @@ def calculate_snippet_recall_at_k(
 
         # Check if any retrieved chunk matches this ground truth snippet
         for chunk in top_k_chunks:
-            chunk_file = chunk.get('file_path', chunk.get('source', ''))
+            # Check top-level first, then check inside metadata dict
+            chunk_file = chunk.get('file_path') or chunk.get('source') or \
+                         chunk.get('metadata', {}).get('file_path') or \
+                         chunk.get('metadata', {}).get('source', '')
             chunk_span = chunk.get('span', (chunk.get('start_char', 0), chunk.get('end_char', 0)))
 
             if chunk_file == gt_file:
@@ -273,7 +279,10 @@ def evaluate_legalbench_rag(
         retrieved_docs = []
         retrieved_chunks = []
         for doc in results:
-            doc_id = doc.get('source', doc.get('file_path', ''))
+            # Check top-level first, then check inside metadata dict
+            doc_id = doc.get('source') or doc.get('file_path') or \
+                     doc.get('metadata', {}).get('source') or \
+                     doc.get('metadata', {}).get('file_path', '')
             retrieved_docs.append(doc_id)
 
             # Extract span information if available

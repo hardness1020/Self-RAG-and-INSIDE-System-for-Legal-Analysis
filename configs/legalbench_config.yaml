@@ -6,7 +6,7 @@
 #
 # Dataset available at: https://github.com/zeroentropy-cc/legalbenchrag
 
-# Dataset paths
+# Dataset paths (relative to project root)
 corpus_dir: 'data/legalbench-rag/corpus'
 queries_file: 'data/legalbench-rag/queries.json'
 

@@ -40,6 +40,10 @@ env/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
+# Notebook outputs (optional - uncomment to ignore all notebook outputs)
+# *.ipynb
+# But track the notebooks themselves, just clear outputs before committing
+
 # Environment variables
 .env
 .env.local
@@ -66,6 +70,17 @@ data/*.jsonl
 data/*.parquet
 !data/.gitkeep
 !data/README.md
+
+# LegalBench-RAG dataset (large corpus files)
+data/legalbench-rag/corpus/*
+data/legalbench-rag/benchmarks/*
+data/legalbench-rag/*.json
+!data/legalbench-rag/.gitkeep
+
+# Vector embeddings and indices
+data/legalbench_embeddings/
+data/*_embeddings/
+data/embeddings/
 
 # Vector indices and embeddings
 *.faiss
@@ -94,6 +109,9 @@ uv.lock
 # Output directories
 outputs/
 results/
+!results/*.png  # Track result visualizations
+!results/*.json # Track result metrics
+!results/*.txt  # Track result summaries
 checkpoints/
 saved_models/
 experiments/
