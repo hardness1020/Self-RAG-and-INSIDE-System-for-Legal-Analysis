@@ -6,13 +6,6 @@ This directory contains a comprehensive tutorial series for the **Self-RAG + INS
 
 These interactive Jupyter notebooks guide you through building, training, evaluating, and deploying a production-ready legal RAG system. The tutorials progress from basic retrieval concepts to advanced hallucination detection and intent-aware retrieval, culminating in evaluation against the LegalBench-RAG benchmark.
 
-## Prerequisites
-
-- Python 3.8+
-- Required packages (see `requirements.txt`)
-- GPU recommended but not required (CPU-compatible with 4-bit quantization)
-- Sample legal documents provided in `data/samples/`
-- LegalBench-RAG dataset (for benchmark evaluation)
 
 ## Notebooks
 
@@ -60,7 +53,7 @@ These interactive Jupyter notebooks guide you through building, training, evalua
 #### 03. Self-RAG Training (30-60 minutes)
 **Train critic and generator models using QLoRA**
 
-- Generating reflection token labels (ISREL, ISSUP, ISUSE, INTENT)
+- Generating reflection token labels (Retrieve, ISREL, ISSUP, ISUSE)
 - Training critic model to predict reflection tokens
 - Training generator with critic-augmented data
 - Quick validation of trained pipeline
@@ -68,6 +61,10 @@ These interactive Jupyter notebooks guide you through building, training, evalua
 
 **Output**: LoRA adapters in `models/critic_lora/` and `models/generator_lora/`
 **Training Stats**: Critic loss ~2.13, Generator loss ~1.73 (3 epochs each, ~11 min on Mac GPU)
+
+**Note**: This notebook trains Self-RAG reflection tokens only. INTENT detection (part of INSIDE) is covered in notebook 07.
+
+**⚠️ Dataset Limitation**: This notebook uses only **10 Q&A pairs** for demonstration purposes. Models trained on this toy dataset will be undertrained and show limited performance. For production-quality training, see notebooks 10-11 which use the full LegalBench dataset (776 queries).
 
 ---
 
@@ -83,6 +80,8 @@ These interactive Jupyter notebooks guide you through building, training, evalua
 **Output**: Results in `results/` with visualizations
 **Sample Metrics**: 0% hallucination, 0.91 completeness, MRR: 0.09, MAP: 0.11
 
+**⚠️ Performance Note**: Metrics shown are from models trained on only 10 Q&A pairs (notebook 03). These results demonstrate the evaluation pipeline but do not represent production-quality performance. The low retrieval scores (MRR: 0.09, MAP: 0.11) reflect underfitting due to insufficient training data.
+
 ---
 
 #### 05. Demo (15-20 minutes)
@@ -96,6 +95,8 @@ These interactive Jupyter notebooks guide you through building, training, evalua
 - Exporting demo results
 
 **Output**: Interactive demo with reflection token analysis in `results/demo_results.json`
+
+**⚠️ Model Quality Note**: This demo uses models trained on a small toy dataset (10 Q&A pairs). Responses may be suboptimal due to underfitting. The notebook demonstrates the Self-RAG pipeline architecture rather than production-quality generation.
 
 ---
 
@@ -111,7 +112,7 @@ These interactive Jupyter notebooks guide you through building, training, evalua
 - Multi-generation detection for robustness
 - Calibrating thresholds on labeled data
 
-**Key Insight**: Lower EigenScore → Higher hallucination risk
+**Key Insight**: Higher EigenScore → Higher hallucination risk
 **Output**: EigenScore computation, eigenvalue visualizations, calibrated thresholds
 
 ---
@@ -164,10 +165,10 @@ Query → Intent Detection → Adaptive Retrieval → Self-RAG Generation
 
 ---
 
-### Benchmarking
+### LegalBench Dataset Integration
 
-#### 09. LegalBench-RAG Benchmark (60-90 minutes)
-**Evaluation using the first dedicated benchmark for legal RAG**
+#### 09. LegalBench Retrieval Evaluation (60-90 minutes)
+**Retrieval evaluation using the LegalBench-RAG benchmark**
 
 - Automatic dataset preparation (merging 4 subdatasets)
 - Exploring 6,858 queries across 714 legal documents
@@ -188,6 +189,38 @@ Query → Intent Detection → Adaptive Retrieval → Self-RAG Generation
 
 ---
 
+#### 10. LegalBench Training (2-3 hours) 🚧
+**Train production-quality Self-RAG models on LegalBench mini dataset**
+
+- Loading LegalBench training labels (776 queries)
+- Training generator with LoRA on legal Q&A pairs
+- Training critic to predict reflection tokens
+- Full training/validation split with stratification
+- Comprehensive training visualizations and metrics
+
+**Training Data**: 776 queries from LegalBench mini (ContractNLI, CUAD, MAUD, PrivacyQA)
+**Output**: Production LoRA adapters in `models/generator_legalbench_lora/` and `models/critic_legalbench_lora/`
+
+**Status**: 🚧 Work in Progress - Training labels generated, training pipeline ready but not yet executed
+
+---
+
+#### 11. LegalBench Generation Evaluation (1-2 hours) 🚧
+**Compare generation methods on LegalBench benchmark**
+
+- Method comparison: No-RAG, Basic RAG, Self-RAG, Self-RAG+INSIDE
+- Generation quality metrics (F1, ROUGE-L, hallucination rate, utility)
+- Per-subdataset performance breakdown
+- Multi-metric radar charts and visualizations
+- Example outputs with side-by-side comparison
+
+**Evaluation Set**: 776 queries (or 50-query subset for testing)
+**Output**: Comprehensive comparison in `results/generation_results.json` with visualizations
+
+**Status**: 🚧 Work in Progress - Evaluation pipeline ready, pending trained models from notebook 10
+
+---
+
 ## Recommended Workflow
 
 ### Path 1: Core System (Beginner)
@@ -200,6 +233,8 @@ Query → Intent Detection → Adaptive Retrieval → Self-RAG Generation
 5. `04_evaluation.ipynb` (20 min) - Measure performance
 6. `05_demo.ipynb` (15 min) - Interactive testing
 
+**⚠️ Note**: Notebooks 03-05 use a toy dataset (10 Q&A pairs) for quick demonstration. Models will be undertrained. For production training, complete Path 1 then proceed to notebooks 10-11.
+
 ### Path 2: Advanced Features (Intermediate)
 **Total Time: ~3-4 hours (includes Path 1)**
 
@@ -209,83 +244,16 @@ Complete Path 1, then:
 8. `07_intent_aware_retrieval.ipynb` (30-45 min) - Adaptive retrieval
 9. `08_combined_system.ipynb` (45-60 min) - Full integration
 
-### Path 3: Benchmarking (Advanced)
-**Total Time: ~4-5 hours (includes Paths 1 & 2)**
+### Path 3: LegalBench Dataset (Advanced)
+**Total Time: ~5-7 hours (includes Paths 1 & 2)**
 
-Complete Paths 1 & 2, then:
+Complete Paths 1 & 2, then work with the production LegalBench-RAG dataset:
 
-10. `09_legalbench_benchmark.ipynb` (60-90 min) - Industry benchmark
+10. `09_legalbench_retrieval.ipynb` (60-90 min) - Retrieval evaluation ✅
+11. `10_legalbench_training.ipynb` (2-3 hours) - Train on 776 queries 🚧
+12. `11_legalbench_generation.ipynb` (1-2 hours) - Generation evaluation 🚧
 
----
-
-## Quick Start
-
-To get started quickly:
-
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Launch Jupyter
-jupyter notebook
-
-# 3. Open and run notebooks in order (00 → 01 → 02 → ...)
-```
-
-Start with `00_getting_started.ipynb` for a 10-minute introduction to the core concepts.
-
----
-
-## Key Technologies & Concepts
-
-- **Self-RAG**: Retrieval-Augmented Generation with reflection tokens (Retrieve, ISREL, ISSUP, ISUSE, INTENT) for self-verification
-- **INSIDE**: INternal States for hallucInation DEtection using EigenScore analysis
-- **QLoRA**: 4-bit quantized LoRA for memory-efficient training (CPU-compatible)
-- **RCTS**: Recursive Character Text Splitter optimized for legal document structure
-- **FAISS**: Facebook AI Similarity Search for efficient vector database operations
-- **Intent Detection**: Classifies queries into 4 types (Factual, Exploratory, Comparative, Procedural)
-- **Reflection Tokens**: Self-verification signals that guide generation quality
-- **EigenScore**: Eigenvalue-based metric for detecting hallucinations via internal states
-- **LegalBench-RAG**: First comprehensive benchmark for legal RAG systems
-- **Mac GPU (MPS)**: Optimized for Apple Silicon acceleration
-
----
-
-## Configuration Files
-
-The notebooks use these configuration files:
-
-- `configs/retrieval_config.yaml` - Retrieval system settings
-- `configs/generator_config.yaml` - Generator model configuration
-- `configs/inside_config.yaml` - INSIDE system parameters
-
----
-
-## Data Directories
-
-- `data/samples/` - Sample legal documents and Q&A pairs
-- `data/training/` - Prepared training and test splits
-- `data/embeddings/` - FAISS indexes and vector databases
-- `data/legalbench-rag/` - LegalBench-RAG benchmark dataset
-- `results/` - Evaluation results and visualizations
-- `models/` - Trained LoRA adapters
-
----
-
-## Support
-
-For questions or issues with the notebooks, please refer to the main project README or open an issue on the project repository.
-
----
-
-## Citation
-
-If you use these notebooks or the LegalBench-RAG benchmark in your research, please cite:
-
-- **Self-RAG**: Asai et al. (2023) - Self-Reflective Retrieval-Augmented Generation
-- **INSIDE**: [Relevant paper for INSIDE framework]
-- **LegalBench-RAG**: The first dedicated benchmark for legal RAG systems
-
----
-
-**Last Updated**: 2025-11-20
+**Progress**:
+- ✅ Retrieval evaluation complete with strong results (P@1: 55.93%, R@64: 84.41%)
+- 🚧 Training pipeline ready, labels generated (776 queries from 4 subdatasets)
+- 🚧 Generation evaluation pipeline ready, pending trained models

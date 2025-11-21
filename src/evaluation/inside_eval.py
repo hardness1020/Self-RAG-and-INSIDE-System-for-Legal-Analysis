@@ -61,7 +61,7 @@ class EigenScoreEvaluator:
         Compute detection metrics.
 
         Args:
-            threshold: EigenScore threshold (lower = hallucination)
+            threshold: EigenScore threshold (higher = hallucination)
                       If None, finds optimal threshold
 
         Returns:
@@ -75,14 +75,14 @@ class EigenScoreEvaluator:
 
         # Find optimal threshold if not provided
         if threshold is None:
-            # Threshold: hallucinations have lower EigenScore
-            precision, recall, thresholds = precision_recall_curve(labels, -eigenscores)
+            # Threshold: hallucinations have higher EigenScore
+            precision, recall, thresholds = precision_recall_curve(labels, eigenscores)
             f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
             optimal_idx = np.argmax(f1_scores)
-            threshold = -thresholds[optimal_idx]
+            threshold = thresholds[optimal_idx]
 
         # Compute predictions
-        predictions = eigenscores < threshold
+        predictions = eigenscores > threshold
 
         # Metrics
         tp = np.sum((predictions == 1) & (labels == 1))
@@ -116,8 +116,8 @@ class EigenScoreEvaluator:
         eigenscores = np.array([r['eigenscore'] for r in self.results])
         labels = np.array([r['is_hallucination'] for r in self.results])
 
-        # ROC curve (use negative scores since lower = hallucination)
-        fpr, tpr, _ = roc_curve(labels, -eigenscores)
+        # ROC curve (higher scores indicate hallucination)
+        fpr, tpr, _ = roc_curve(labels, eigenscores)
         roc_auc = auc(fpr, tpr)
 
         plt.figure(figsize=(8, 6))
@@ -180,12 +180,12 @@ class EigenScoreEvaluator:
             labels = np.array([r['is_hallucination'] for r in intent_results])
 
             # Find optimal threshold for this intent
-            precision, recall, thresholds = precision_recall_curve(labels, -eigenscores)
+            precision, recall, thresholds = precision_recall_curve(labels, eigenscores)
             f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
             optimal_idx = np.argmax(f1_scores)
-            threshold = -thresholds[optimal_idx] if len(thresholds) > 0 else 0
+            threshold = thresholds[optimal_idx] if len(thresholds) > 0 else 0
 
-            predictions = eigenscores < threshold
+            predictions = eigenscores > threshold
 
             tp = np.sum((predictions == 1) & (labels == 1))
             fp = np.sum((predictions == 1) & (labels == 0))

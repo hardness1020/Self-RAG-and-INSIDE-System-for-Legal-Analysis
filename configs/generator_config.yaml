@@ -2,7 +2,7 @@
 
 # Base model
 model:
-  base_model: "Qwen/Qwen2.5-1.5B-Instruct"  # Non-gated model for macOS compatibility
+  base_model: "Qwen/Qwen2.5-0.5B-Instruct"  # Smaller model for memory efficiency (1.9GB vs 4.5GB)
   model_type: "qwen"
   cache_dir: "models/base"
 
@@ -74,13 +74,13 @@ training:
   gradient_checkpointing: true
   max_grad_norm: 0.3
 
-# Inference parameters
+# Inference parameters (optimized for speed with greedy decoding)
 inference:
   max_new_tokens: 512
-  temperature: 0.7
-  top_p: 0.9
-  top_k: 50
-  do_sample: true
+  temperature: 0.0      # Greedy decoding for 1.5-2x speedup
+  top_p: 0.9           # Ignored when do_sample=false
+  top_k: 50            # Ignored when do_sample=false
+  do_sample: false     # Greedy decoding (set to true for sampling)
   num_beams: 1
 
   # Reflection token weights for scoring
@@ -105,7 +105,7 @@ inside:
 
   # Internal states extraction during generation
   extract_internal_states: true
-  target_layers: [14]  # Middle layer for Qwen2.5-1.5B (28 layers total)
+  target_layers: [11]  # Middle layer for Qwen2.5-0.5B (24 layers total)
 
   # EigenScore hallucination detection
   eigenscore:

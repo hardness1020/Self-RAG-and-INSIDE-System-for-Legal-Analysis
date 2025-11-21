@@ -140,6 +140,8 @@ graph TD
 
 **Entry Point**: [`notebooks/03_self_rag_training.ipynb`](notebooks/03_self_rag_training.ipynb)
 
+**⚠️ Note**: The basic training in notebook 03 uses a toy dataset (10 Q&A pairs) for quick demonstration. Models will be undertrained. For production-quality training on the full LegalBench dataset (776 queries), see notebooks 10-11.
+
 ---
 
 ## Phase 4: Self-RAG Inference
@@ -205,12 +207,12 @@ Output: {
 ### Step 4: EigenScore Computation
 - Compute covariance matrix of sentence embeddings
 - Calculate eigenvalue spectrum
-- Differential entropy: `H = -0.5 × Σ(log(λᵢ))`
-- Lower score = less semantic consistency = hallucination
+- Differential entropy: `H = 0.5 × (n×log(2πe) + Σ(log(λᵢ)))`
+- Higher score = higher entropy = less semantic consistency = hallucination
 - File: [`src/inside/eigenscore.py`](src/inside/eigenscore.py)
 
 ### Step 5: Dual Hallucination Detection
-- **Method 1**: EigenScore < threshold → hallucination
+- **Method 1**: EigenScore > threshold → hallucination
 - **Method 2**: ISSUP token = `[No Support]` → hallucination
 - **Combined**: Both methods for robust detection
 - File: [`src/inside/hallucination_detector.py`](src/inside/hallucination_detector.py)
@@ -255,138 +257,17 @@ Output: {
 - Config: [`configs/legalbench_config.yaml`](configs/legalbench_config.yaml)
 
 **Entry Points:**
-- [`notebooks/04_evaluation.ipynb`](notebooks/04_evaluation.ipynb) - General evaluation
-- [`notebooks/09_legalbench_benchmark.ipynb`](notebooks/09_legalbench_benchmark.ipynb) - Benchmark
+- [`notebooks/04_evaluation.ipynb`](notebooks/04_evaluation.ipynb) - General evaluation (toy dataset)
+- [`notebooks/09_legalbench_retrieval.ipynb`](notebooks/09_legalbench_retrieval.ipynb) - Retrieval evaluation ✅
+- [`notebooks/10_legalbench_training.ipynb`](notebooks/10_legalbench_training.ipynb) - Production training 🚧
+- [`notebooks/11_legalbench_generation.ipynb`](notebooks/11_legalbench_generation.ipynb) - Generation evaluation 🚧
+
+**LegalBench Workflow** (Notebooks 09-11):
+1. **Retrieval Evaluation** (09): Evaluate retrieval system on 776 queries
+2. **Production Training** (10): Train critic & generator on LegalBench dataset
+3. **Generation Evaluation** (11): Compare 4 methods (No-RAG, Basic RAG, Self-RAG, Self-RAG+INSIDE)
 
 **Output Directory**: `results/`
-
----
-
-## Quick Start Guide
-
-### 1. Index Your Documents
-```python
-from src.retrieval.retriever import load_retriever_from_config
-
-retriever = load_retriever_from_config("configs/retrieval_config.yaml")
-retriever.index_documents(documents)
-retriever.save_index("data/embeddings")
-```
-
-### 2. Generate Training Labels
-```bash
-python src/training/generate_labels.py --input data/samples/sample_qa_data.json --output data/training/labeled_data.json --method rule_based
-```
-
-### 3. Train Models
-```bash
-# Train Critic
-python src/training/train_critic_qlora.py --config configs/critic_config.yaml
-
-# Train Generator
-python src/training/train_generator_qlora.py --config configs/generator_config.yaml
-```
-
-### 4. Run Inference (INSIDE-Enhanced)
-```python
-from src.self_rag.inside_generator import INSIDEGenerator
-
-generator = INSIDEGenerator.from_config(
-    generator_config_path='configs/generator_config.yaml',
-    inside_config_path='configs/inside_config.yaml',
-    lora_weights_path='models/generator_lora/final'
-)
-
-result = generator.generate_with_inside(
-    query="What are the elements of negligence?",
-    detect_hallucination=True
-)
-
-print(f"Answer: {result['answer']}")
-print(f"Intent: {result['intent']}")
-print(f"Is Hallucination: {result['hallucination_result']['is_hallucination']}")
-print(f"Confidence: {result['combined_score']}")
-```
-
-### 5. Evaluate System
-```python
-from src.evaluation.inside_eval import INSIDEEvaluator
-
-evaluator = INSIDEEvaluator(config_path='configs/inside_config.yaml')
-results = evaluator.evaluate(test_data)
-evaluator.save_results("results/inside_evaluation.json")
-```
-
----
-
-## Directory Structure
-
-```
-├── src/                          # Source code
-│   ├── retrieval/               # Retrieval pipeline (chunking, embedding, indexing)
-│   ├── self_rag/                # Self-RAG system (critic, generator, inference)
-│   ├── inside/                  # INSIDE framework (intent, eigenscore, hallucination)
-│   ├── training/                # Training scripts (label generation, QLoRA training)
-│   └── evaluation/              # Evaluation frameworks (metrics, benchmarks)
-│
-├── configs/                      # Configuration files (YAML)
-│   ├── retrieval_config.yaml    # Retrieval settings
-│   ├── critic_config.yaml       # Critic training
-│   ├── generator_config.yaml    # Generator training + reflection weights
-│   ├── inside_config.yaml       # INSIDE settings (eigenscore, intent)
-│   └── legalbench_config.yaml   # Benchmark evaluation
-│
-├── notebooks/                    # Tutorial notebooks (9 total, ~5-90 min each)
-│   ├── 00_getting_started.ipynb
-│   ├── 01_data_preparation.ipynb
-│   ├── 02_retrieval_pipeline.ipynb
-│   ├── 03_self_rag_training.ipynb
-│   ├── 04_evaluation.ipynb
-│   ├── 05_demo.ipynb
-│   ├── 06_inside_eigenscore.ipynb
-│   ├── 07_intent_aware_retrieval.ipynb
-│   ├── 08_combined_system.ipynb
-│   └── 09_legalbench_benchmark.ipynb
-│
-├── data/                         # Data storage
-│   ├── samples/                 # Sample legal docs + Q&A
-│   ├── training/                # Generated labels
-│   ├── embeddings/              # FAISS indices
-│   ├── legalbench_embeddings/   # Benchmark index
-│   └── legalbench-rag/          # Benchmark dataset
-│
-├── models/                       # Trained models
-│   ├── critic_lora/final/       # Critic LoRA adapters (~50MB)
-│   └── generator_lora/final/    # Generator LoRA adapters (~50MB)
-│
-└── results/                      # Evaluation results (JSON)
-```
-
----
-
-## Key Design Principles
-
-1. **Modular Architecture**: Each component (retrieval, self-rag, inside) is independent and reusable
-2. **Configuration-Driven**: All settings in YAML files for easy experimentation
-3. **Efficient Training**: QLoRA (4-bit quantization) enables training on CPU/limited GPU
-4. **Mac GPU Optimized**: MPS device support for 5-10x speedup on Apple Silicon
-5. **Dual Hallucination Detection**: ISSUP token + EigenScore for ~90% accuracy
-6. **Intent-Aware**: Adaptive retrieval strategies based on query type
-7. **Comprehensive Evaluation**: Multi-level metrics + industry benchmark
-
----
-
-## Performance Summary
-
-| Metric | Value |
-|--------|-------|
-| **Hallucination Rate** | 0-10% (vs 25-40% vanilla RAG) |
-| **Hallucination Detection** | ~90% accuracy (dual method) |
-| **Retrieval Precision@1** | 6-15% (legal domain) |
-| **Retrieval Recall@64** | 60-85% |
-| **Inference Speed** | 2-5 sec per response |
-| **Training Time** | 11 min for 3 epochs (Mac GPU) |
-| **Model Size** | ~50MB LoRA (vs ~13GB full model) |
 
 ---
 
@@ -397,12 +278,3 @@ evaluator.save_results("results/inside_evaluation.json")
 - **LegalBench-RAG**: [https://arxiv.org/abs/2406.10667](https://arxiv.org/abs/2406.10667)
 - **Base Model**: Qwen/Qwen2.5-1.5B-Instruct
 - **Embeddings**: sentence-transformers/all-mpnet-base-v2
-
----
-
-## Getting Help
-
-For detailed tutorials, see the notebooks in [`notebooks/`](notebooks/) directory:
-- Start with [`00_getting_started.ipynb`](notebooks/00_getting_started.ipynb) for a quick 10-minute intro
-- Follow the numbered sequence for a complete walkthrough
-- Each notebook is self-contained with explanations and runnable code

@@ -135,12 +135,15 @@ DSC261_Responsible_DS/
 │   ├── 00_getting_started.ipynb
 │   ├── 01_data_preparation.ipynb
 │   ├── 02_retrieval_pipeline.ipynb
-│   ├── 03_self_rag_training.ipynb
+│   ├── 03_self_rag_training.ipynb       # ⚠️ Uses toy dataset (10 Q&A pairs)
 │   ├── 04_evaluation.ipynb
 │   ├── 05_demo.ipynb
 │   ├── 06_inside_eigenscore.ipynb       # INSIDE EigenScore tutorial (NEW)
 │   ├── 07_intent_aware_retrieval.ipynb  # Intent-aware retrieval (NEW)
-│   └── 08_combined_system.ipynb         # Complete system demo (NEW)
+│   ├── 08_combined_system.ipynb         # Complete system demo (NEW)
+│   ├── 09_legalbench_retrieval.ipynb    # LegalBench retrieval evaluation
+│   ├── 10_legalbench_training.ipynb     # LegalBench production training 🚧
+│   └── 11_legalbench_generation.ipynb   # LegalBench generation evaluation 🚧
 ├── configs/                  # YAML configuration files
 │   ├── retrieval_config.yaml
 │   ├── critic_config.yaml
@@ -187,7 +190,7 @@ All settings customizable via YAML files:
 
 ## Notebooks
 
-Ten tutorial notebooks provide hands-on learning:
+Twelve tutorial notebooks provide hands-on learning:
 
 ### Core Self-RAG (Notebooks 00-05)
 1. **00_getting_started.ipynb** - Quick start (10 min)
@@ -197,15 +200,19 @@ Ten tutorial notebooks provide hands-on learning:
 5. **04_evaluation.ipynb** - Performance evaluation
 6. **05_demo.ipynb** - Interactive demo
 
+**⚠️ Note**: Notebooks 03-05 use a toy dataset (10 Q&A pairs) for quick demonstration. Models will be undertrained. For production training, see notebooks 10-11.
+
 ### INSIDE Integration (Notebooks 06-08)
 7. **06_inside_eigenscore.ipynb** - EigenScore hallucination detection (30-45 min)
 8. **07_intent_aware_retrieval.ipynb** - Intent detection and adaptive retrieval (30-45 min)
 9. **08_combined_system.ipynb** - Complete Self-RAG + INSIDE pipeline (45-60 min)
 
-### Benchmarking (Notebook 09)
-10. **09_legalbench_benchmark.ipynb** - LegalBench-RAG evaluation
+### LegalBench Dataset (Notebooks 09-11)
+10. **09_legalbench_retrieval.ipynb** - Retrieval evaluation on LegalBench-RAG (60-90 min) ✅
+11. **10_legalbench_training.ipynb** - Production training on 776 queries (2-3 hours) 🚧
+12. **11_legalbench_generation.ipynb** - Generation method comparison (1-2 hours) 🚧
 
-**Workflow**: Start with 00, run 01-05 for core Self-RAG, then 06-09 for advanced features.
+**Workflow**: Start with 00, run 01-05 for core Self-RAG, then 06-08 for INSIDE features, and finally 09-11 for LegalBench evaluation and production training.
 
 ## LegalBench-RAG Benchmark
 

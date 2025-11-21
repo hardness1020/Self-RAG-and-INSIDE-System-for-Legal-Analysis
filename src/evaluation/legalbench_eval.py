@@ -286,10 +286,13 @@ def evaluate_legalbench_rag(
             retrieved_docs.append(doc_id)
 
             # Extract span information if available
+            # Note: If positions aren't tracked, both default to 0 (indicating no position info)
+            # rather than creating false spans with len(text)
             chunk_info = {
                 'file_path': doc_id,
-                'span': (doc.get('start_char', 0), doc.get('end_char', len(doc.get('text', '')))),
-                'text': doc.get('text', '')
+                'span': (doc.get('start_char', 0), doc.get('end_char', 0)),
+                'text': doc.get('text', ''),
+                'metadata': doc.get('metadata', {})  # Preserve for debugging
             }
             retrieved_chunks.append(chunk_info)
 

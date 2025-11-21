@@ -130,7 +130,7 @@ class HallucinationDetector:
             )
         else:
             threshold = self.eigenscore_aggregator.threshold
-            is_hallucination = eigenscore < threshold if threshold else False
+            is_hallucination = eigenscore > threshold if threshold else False
 
         # Feature clipping analysis (if requested)
         clipping_results = {}

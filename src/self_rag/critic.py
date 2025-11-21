@@ -5,6 +5,10 @@ Implements the critic model for predicting reflection tokens.
 The critic evaluates text and predicts appropriate reflection tokens
 (Retrieve, ISREL, ISSUP, ISUSE) for use in Self-RAG training.
 
+Note: INTENT tokens are handled by INSIDE's IntentDetector (see src/inside/intent_detector.py),
+not by this critic model. INTENT detection occurs before retrieval, while reflection tokens
+are predicted during/after generation.
+
 Based on the Self-RAG paper by Asai et al. (2023).
 """
 
@@ -90,21 +94,27 @@ class CriticModel:
             trust_remote_code=True,
         )
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.padding_side = "right"
+        self.tokenizer.padding_side = "left"  # Left padding for decoder-only models
 
         # Add reflection tokens to tokenizer
         special_tokens = ReflectionTokenizer.get_all_special_tokens()
         self.tokenizer.add_special_tokens({'additional_special_tokens': special_tokens})
 
         # Load model
+        # Note: device_map="auto" causes OOM on MPS, use manual placement
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             device_map="auto" if self.device == "cuda" else None,
             trust_remote_code=True,
+            low_cpu_mem_usage=True,  # Reduce CPU memory during loading
         )
 
         # Resize token embeddings for new special tokens
         self.model.resize_token_embeddings(len(self.tokenizer))
+
+        # Move model to device manually for MPS/CPU
+        if self.device != "cuda":
+            self.model = self.model.to(self.device)
 
         # Load LoRA weights if provided
         if lora_weights_path:
@@ -175,8 +185,8 @@ class CriticModel:
             truncation=True,
         ).to(self.model.device)
 
-        # Generate
-        with torch.no_grad():
+        # Generate with inference mode for better performance
+        with torch.inference_mode():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
@@ -220,6 +230,9 @@ class CriticModel:
         """
         Predict all relevant reflection tokens for a QA example.
 
+        Uses batched inference to predict all tokens in a single forward pass,
+        significantly improving performance over sequential predictions.
+
         Args:
             question: Question text
             passage: Retrieved passage (optional)
@@ -228,40 +241,96 @@ class CriticModel:
         Returns:
             Dictionary with predicted tokens
         """
-        predictions = {}
+        if self.model is None:
+            raise ValueError("Model not loaded")
 
-        # Predict Retrieve token
+        predictions = {}
+        prompts = []
+        token_types = []
+
+        # Build batch of prompts
         if answer:
             retrieve_prompt = GPT4_PROMPTS['retrieve'].format(
                 question=question,
                 answer=answer,
             )
-            predictions['retrieve'] = self.predict_token(retrieve_prompt, 'retrieve')
+            prompts.append(retrieve_prompt)
+            token_types.append('retrieve')
 
-        # Predict ISREL token
         if passage:
             isrel_prompt = GPT4_PROMPTS['isrel'].format(
                 question=question,
                 passage=passage,
             )
-            predictions['isrel'] = self.predict_token(isrel_prompt, 'isrel')
+            prompts.append(isrel_prompt)
+            token_types.append('isrel')
 
-        # Predict ISSUP token
         if passage and answer:
             issup_prompt = GPT4_PROMPTS['issup'].format(
                 question=question,
                 passage=passage,
                 answer=answer,
             )
-            predictions['issup'] = self.predict_token(issup_prompt, 'issup')
+            prompts.append(issup_prompt)
+            token_types.append('issup')
 
-        # Predict ISUSE token
         if answer:
             isuse_prompt = GPT4_PROMPTS['isuse'].format(
                 question=question,
                 answer=answer,
             )
-            predictions['isuse'] = self.predict_token(isuse_prompt, 'isuse')
+            prompts.append(isuse_prompt)
+            token_types.append('isuse')
+
+        if not prompts:
+            return predictions
+
+        # Batch tokenization
+        inputs = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        ).to(self.model.device)
+
+        # Single batched forward pass with inference mode
+        with torch.inference_mode():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=10,
+                temperature=1.0,  # Greedy decoding
+                do_sample=False,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
+
+        # Decode all outputs and extract tokens
+        for i, (output, token_type) in enumerate(zip(outputs, token_types)):
+            generated = self.tokenizer.decode(output, skip_special_tokens=False)
+
+            # Extract token based on type
+            if token_type == 'retrieve':
+                for token in RetrieveToken:
+                    if token.value in generated:
+                        predictions['retrieve'] = token.value
+                        break
+
+            elif token_type == 'isrel':
+                for token in ISRELToken:
+                    if token.value in generated:
+                        predictions['isrel'] = token.value
+                        break
+
+            elif token_type == 'issup':
+                for token in ISSUPToken:
+                    if token.value in generated:
+                        predictions['issup'] = token.value
+                        break
+
+            elif token_type == 'isuse':
+                for token in ISUSEToken:
+                    if token.value in generated:
+                        predictions['isuse'] = token.value
+                        break
 
         return predictions
 

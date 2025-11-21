@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 import yaml
 import argparse
+import torch
+import gc
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -22,6 +24,14 @@ from retrieval.retriever import LegalRetriever, load_retriever_from_config
 from self_rag.generator import SelfRAGGenerator, load_generator_from_config
 from self_rag.critic import CriticModel, load_critic_from_config
 from self_rag.reflection_tokens import ReflectionTokenizer, RetrieveToken
+
+
+def clear_mps_cache():
+    """Clear MPS cache to free memory on Apple Silicon."""
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+        gc.collect()
+        print("MPS cache cleared")
 
 
 class SelfRAGPipeline:
@@ -37,7 +47,7 @@ class SelfRAGPipeline:
         retriever: LegalRetriever,
         critic: Optional[CriticModel] = None,
         adaptive_retrieval: bool = True,
-        max_retrieval_steps: int = 3,
+        max_retrieval_steps: int = 1,  # Reduced from 3 for faster inference
     ):
         """
         Initialize Self-RAG pipeline.
@@ -105,6 +115,11 @@ class SelfRAGPipeline:
                 max_retrieval_steps=self.max_retrieval_steps,
             )
             result['retrieval_history'] = retrieval_history
+
+            # Extract retrieved passages from retrieval history to avoid duplicate retrieval
+            if retrieval_history:
+                # Use documents from the last retrieval step
+                result['retrieved_passages'] = retrieval_history[-1]['documents']
         else:
             # Standard generation
             response = self.generator.generate(
@@ -252,18 +267,21 @@ def load_pipeline_from_config(
     print("\n2. Loading generator...")
     generator = load_generator_from_config(generator_config_path)
     generator.load_model(lora_weights_path=generator_weights_path)
+    clear_mps_cache()  # Clear cache after loading to free memory
 
     # Load critic (optional but recommended for reflection tokens)
     critic = None
     if use_critic:
         print("\n3. Loading critic model for reflection tokens...")
         try:
-            # Use provided config or default to critic_config.yaml
+            # Use provided config or derive from generator config directory
             if critic_config_path is None:
-                critic_config_path = 'configs/critic_config.yaml'
+                generator_dir = Path(generator_config_path).parent
+                critic_config_path = str(generator_dir / 'critic_config.yaml')
 
             critic = load_critic_from_config(critic_config_path)
             critic.load_model(lora_weights_path=critic_weights_path)
+            clear_mps_cache()  # Clear cache after loading to free memory
             print("   Critic model loaded successfully")
         except Exception as e:
             print(f"   Warning: Could not load critic model: {e}")
@@ -282,7 +300,7 @@ def load_pipeline_from_config(
         retriever=retriever,
         critic=critic,
         adaptive_retrieval=adaptive_retrieval,
-        max_retrieval_steps=3,
+        max_retrieval_steps=1,  # Reduced from 3 for faster inference
     )
 
     print("\nPipeline loaded successfully!")

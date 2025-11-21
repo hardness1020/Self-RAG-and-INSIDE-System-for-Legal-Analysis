@@ -34,7 +34,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from self_rag.reflection_tokens import ReflectionTokenizer
 from self_rag.critic import CriticModel
-from utils.device_utils import get_optimal_device
+from utils.device_utils import get_optimal_device, get_training_args_for_device
 
 
 def load_and_augment_data(
@@ -300,6 +300,9 @@ def train_generator(
     output_dir = training_config['output_dir']
     os.makedirs(output_dir, exist_ok=True)
 
+    # Get device-specific training args (priority: CUDA -> MPS -> CPU)
+    device_args = get_training_args_for_device(device)
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=training_config.get('num_train_epochs', 3),
@@ -322,6 +325,7 @@ def train_generator(
         gradient_checkpointing=training_config.get('gradient_checkpointing', True),
         max_grad_norm=training_config.get('max_grad_norm', 0.3),
         report_to="none",
+        **device_args,  # Add device-specific arguments
     )
 
     # Data collator

@@ -63,6 +63,47 @@ def get_optimal_device(prefer_gpu: bool = True, verbose: bool = True) -> str:
     return device
 
 
+def get_training_args_for_device(device: str) -> dict:
+    """
+    Get HuggingFace TrainingArguments kwargs for the specified device.
+
+    This function returns the appropriate device-specific parameters needed
+    for HuggingFace's Trainer class to correctly use the specified device.
+
+    Uses the modern transformers API (4.35+) with automatic MPS/CUDA detection.
+
+    Args:
+        device: Device string from get_optimal_device() ('cuda', 'mps', or 'cpu')
+
+    Returns:
+        Dictionary of kwargs to pass to TrainingArguments
+
+    Example:
+        >>> device = get_optimal_device()
+        >>> device_args = get_training_args_for_device(device)
+        >>> training_args = TrainingArguments(..., **device_args)
+
+    Device-specific behavior:
+        - 'cuda': Returns {'use_cpu': False} (enables CUDA auto-detection)
+        - 'mps': Returns {'use_cpu': False} (enables MPS auto-detection)
+        - 'cpu': Returns {'use_cpu': True} (forces CPU usage)
+    """
+    device_lower = device.lower()
+
+    if device_lower == "cuda":
+        # Allow CUDA auto-detection
+        return {"use_cpu": False}
+    elif device_lower == "mps":
+        # Allow MPS auto-detection (modern transformers auto-detect MPS)
+        return {"use_cpu": False}
+    elif device_lower == "cpu":
+        # Force CPU usage
+        return {"use_cpu": True}
+    else:
+        # Unknown device, default to CPU behavior
+        return {"use_cpu": True}
+
+
 def get_device_info() -> dict:
     """
     Get detailed information about available devices.

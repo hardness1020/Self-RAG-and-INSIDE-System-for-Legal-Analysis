@@ -123,6 +123,9 @@ class INTENTToken(Enum):
     """
     Intent detection tokens (INSIDE extension).
 
+    NOTE: Intent is detected by IntentDetector BEFORE retrieval, NOT predicted
+    by Self-RAG generator/critic. This enum is used by INSIDE pipeline only.
+
     Identifies query intent for adaptive retrieval strategies.
     """
     FACTUAL = "[Intent:Factual]"  # Seeking specific facts

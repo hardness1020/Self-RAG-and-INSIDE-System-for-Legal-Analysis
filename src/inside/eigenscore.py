@@ -20,7 +20,7 @@ class EigenScore:
     EigenScore metric for hallucination detection.
 
     Computes differential entropy of eigenvalues from the covariance matrix
-    of sentence embeddings. Lower EigenScore suggests potential hallucination.
+    of sentence embeddings. Higher EigenScore suggests potential hallucination.
 
     Args:
         normalize: Whether to normalize embeddings before computing covariance
@@ -161,7 +161,7 @@ class EigenScoreAggregator:
         """
         Args:
             aggregation_method: Method to aggregate scores ('mean', 'min', 'median')
-            threshold: Threshold for hallucination detection (lower = hallucination)
+            threshold: Threshold for hallucination detection (higher = hallucination)
         """
         self.aggregation_method = aggregation_method
         self.threshold = threshold
@@ -195,7 +195,7 @@ class EigenScoreAggregator:
         agg_score = self.aggregate(scores)
 
         if self.threshold is not None:
-            is_hallucination = agg_score < self.threshold
+            is_hallucination = agg_score > self.threshold
         else:
             is_hallucination = False
 
@@ -261,7 +261,7 @@ class AdaptiveEigenScore:
             Tuple of (is_hallucination, eigenscore, adaptive_threshold)
         """
         adaptive_threshold = self.compute_adaptive_threshold(query_length, model_confidence)
-        is_hallucination = eigenscore < adaptive_threshold
+        is_hallucination = eigenscore > adaptive_threshold
 
         return is_hallucination, eigenscore, adaptive_threshold
 
@@ -352,8 +352,8 @@ def calibrate_threshold(
 
     # Compute detection metrics
     if hallucinated_scores and factual_scores:
-        tp = sum(1 for s in hallucinated_scores if s < threshold)
-        fp = sum(1 for s in factual_scores if s < threshold)
+        tp = sum(1 for s in hallucinated_scores if s > threshold)
+        fp = sum(1 for s in factual_scores if s > threshold)
 
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / len(hallucinated_scores) if hallucinated_scores else 0

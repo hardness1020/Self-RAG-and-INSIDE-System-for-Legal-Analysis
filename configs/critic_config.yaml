@@ -2,7 +2,7 @@
 
 # Base model
 model:
-  base_model: "Qwen/Qwen2.5-1.5B-Instruct"  # Non-gated model for macOS compatibility
+  base_model: "Qwen/Qwen2.5-0.5B-Instruct"  # Smaller model for memory efficiency (1.9GB vs 4.5GB)
   model_type: "qwen"
   cache_dir: "models/base"
 
