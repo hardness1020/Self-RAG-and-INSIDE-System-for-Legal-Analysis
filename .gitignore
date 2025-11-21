@@ -148,3 +148,5 @@ pip-delete-this-directory.txt
 # Hugging Face cache
 .huggingface/
 transformers_cache/
+
+presentation-notes/

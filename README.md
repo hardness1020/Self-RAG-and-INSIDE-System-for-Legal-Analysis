@@ -2,9 +2,7 @@
 
 A complete Retrieval-Augmented Generation (RAG) system with dual hallucination detection for legal document analysis, combining the Self-RAG framework with INSIDE (INternal States for hallucInation DEtection) for enhanced reliability.
 
-**Status**: 100% Complete with INSIDE Integration | **Files**: 40+ | **Lines of Code**: 12,000+
-
----
+**Status**: 100% Complete with INSIDE Integration | **Files**: 30+ Python modules | **Lines of Code**: 9,000+
 
 ## What This Is
 
@@ -18,17 +16,11 @@ This project implements a **Self-RAG + INSIDE** system for legal document analys
 
 ### Key Features
 
-- **Dual Hallucination Detection**: Combines ISSUP token (Self-RAG) with EigenScore (INSIDE) for robust detection
-- **Intent-Aware Retrieval**: Automatic intent detection (Factual, Exploratory, Comparative, Procedural) with adaptive strategies
-- **Internal State Analysis**: Semantic consistency measurement via LLM embedding covariance
-- **Adaptive Retrieval**: Model decides when to retrieve additional context
-- **Self-Verification**: Five reflection tokens (Retrieve, ISREL, ISSUP, ISUSE, INTENT) for quality assessment
-- **Combined Scoring**: Weighted fusion of reflection tokens (70%) + EigenScore (30%) for unified quality metric
-- **CPU-Optimized**: 4-bit quantization (QLoRA) for training on limited resources
-- **Production-Ready**: Complete training scripts, evaluation metrics, and sample data
-- **Modern Tooling**: Uses `uv` for ultra-fast package management (10-100x faster than pip)
-
----
+- **Dual Hallucination Detection**: ISSUP token (Self-RAG) + EigenScore (INSIDE) for robust verification
+- **Intent-Aware Retrieval**: Auto-detect query intent (Factual, Exploratory, Comparative, Procedural) with adaptive strategies
+- **Self-Verification**: Five reflection tokens (Retrieve, ISREL, ISSUP, ISUSE, INTENT) + internal state analysis
+- **CPU-Compatible**: 4-bit quantization (QLoRA) enables training on consumer hardware
+- **Modern Tooling**: Uses `uv` for ultra-fast dependency management (10-100x faster than pip)
 
 ## Quick Start (5 Minutes)
 
@@ -45,161 +37,74 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
 
-### Test the System
+### Run the System
 
 ```bash
-# Test individual components
+# Test components
 uv run python src/retrieval/chunking.py
-uv run python src/retrieval/retriever.py
 uv run python src/self_rag/reflection_tokens.py
 
-# Start tutorial notebook
+# Start tutorial (recommended)
 uv run jupyter notebook notebooks/00_getting_started.ipynb
 ```
 
-### Index Sample Data
-
-```python
-from src.retrieval.retriever import load_retriever_from_config
-import json
-
-# Load sample documents
-with open('data/samples/sample_documents.json', 'r') as f:
-    documents = json.load(f)
-
-# Create and configure retriever
-retriever = load_retriever_from_config("configs/retrieval_config.yaml")
-
-# Index documents
-retriever.index_documents(documents)
-retriever.save_index("data/embeddings")
-
-# Test retrieval
-query = "What are the elements of negligence?"
-results = retriever.retrieve(query, top_k=3)
-
-for i, doc in enumerate(results, 1):
-    print(f"{i}. Score: {doc['score']:.4f}")
-    print(f"   {doc['text'][:100]}...")
-```
-
----
+**See notebooks/00_getting_started.ipynb for complete indexing and retrieval examples.**
 
 ## Using INSIDE Features
 
-### Quick INSIDE Usage
-
 ```python
-# 1. INSIDE-Enhanced Generator (Dual Hallucination Detection)
+# INSIDE-Enhanced Generator (Dual Hallucination Detection)
 from src.self_rag.inside_generator import INSIDEGenerator
-
 generator = INSIDEGenerator.from_config(
     generator_config_path='configs/generator_config.yaml',
-    inside_config_path='configs/inside_config.yaml',
-    lora_weights_path='models/generator_lora'
+    inside_config_path='configs/inside_config.yaml'
 )
-
 result = generator.generate_with_inside(
     query="What are the elements of negligence?",
     detect_hallucination=True
 )
-print(f"Answer: {result['answer']}")
-print(f"EigenScore: {result['eigenscore']:.4f}")
-print(f"Is Hallucination: {result['hallucination_result']['is_hallucination']}")
 
-# 2. Intent-Aware Retrieval (Adaptive Strategies)
+# Intent-Aware Retrieval
 from src.retrieval.inside_retriever import INSIDERetriever
-
 inside_retriever = INSIDERetriever(base_retriever=retriever)
 result = inside_retriever.retrieve("Compare negligence vs strict liability")
-print(f"Intent: {result.query_intent}")  # COMPARATIVE
-print(f"Retrieved {len(result.documents)} documents")  # 6 (adaptive)
 
-# 3. Standalone Hallucination Detection
+# Standalone Hallucination Detection
 from src.inside import create_detector
-
 detector = create_detector(model, tokenizer, device='cpu')
-result = detector.detect_from_generations(
-    query="What is negligence?",
-    generations=[response1, response2, response3]
-)
-print(f"Is Hallucination: {result['is_hallucination']}")
+result = detector.detect_from_generations(query, generations)
 ```
 
-**See notebooks 06-08 for detailed tutorials.**
-
----
+**See notebooks 06-08 for complete tutorials.**
 
 ## Complete Workflow
 
-### 1. Generate Training Labels
-
 ```bash
+# 1. Generate training labels
 uv run python -m src.training.generate_labels \
-    --input data/samples/sample_qa_data.json \
-    --output-dir data/training \
-    --num-samples 10
-```
+    --input data/samples/sample_qa_data.json --output-dir data/training
 
-### 2. Train Critic Model
+# 2. Train critic model (CPU-compatible, reduce epochs for testing)
+uv run python -m src.training.train_critic_qlora --config configs/critic_config.yaml
 
-```bash
-uv run python -m src.training.train_critic_qlora \
-    --config configs/critic_config.yaml
-```
-
-**Note**: Training is CPU-compatible but may be slow. Reduce epochs to 1 for testing.
-
-### 3. Train Generator Model
-
-```bash
+# 3. Train generator model
 uv run python -m src.training.train_generator_qlora \
-    --config configs/generator_config.yaml \
-    --critic-weights models/critic_lora/final
-```
+    --config configs/generator_config.yaml --critic-weights models/critic_lora/final
 
-### 4. Run Inference
-
-```python
-from src.self_rag.inference import load_pipeline_from_config
-
-# Load complete pipeline
-pipeline = load_pipeline_from_config(
-    retrieval_config_path="configs/retrieval_config.yaml",
-    generator_config_path="configs/generator_config.yaml",
-    retriever_index_dir="data/embeddings",
-    generator_weights_path="models/generator_lora/final",
-)
-
-# Answer question with self-verification
-result = pipeline.answer_question("What are the elements of negligence?")
-
-print(f"Answer: {result['answer']}")
-print(f"Reflection: {result['reflection']}")
-print(f"Score: {result['score']:.2f}")
-```
-
-### 5. Evaluate Performance
-
-```bash
-# Evaluate retrieval (Precision@k, Recall@k, MRR, MAP)
+# 4. Evaluate retrieval
 uv run python -m src.evaluation.retrieval_eval \
-    --config configs/retrieval_config.yaml \
-    --index-dir data/embeddings \
-    --test-data data/samples/sample_test_queries.json \
-    --output results/retrieval_results.json
+    --config configs/retrieval_config.yaml --index-dir data/embeddings \
+    --test-data data/samples/sample_test_queries.json
 
-# Evaluate generation (Hallucination rate, FactScore, ROUGE)
+# 5. Evaluate generation
 uv run python -m src.evaluation.generation_eval \
     --retrieval-config configs/retrieval_config.yaml \
     --generator-config configs/generator_config.yaml \
-    --index-dir data/embeddings \
     --generator-weights models/generator_lora/final \
-    --test-data data/samples/sample_qa_data.json \
-    --output results/generation_results.json
+    --test-data data/samples/sample_qa_data.json
 ```
 
----
+**For inference examples, see notebooks 05_demo.ipynb and 08_combined_system.ipynb.**
 
 ## Project Structure
 
@@ -244,44 +149,18 @@ DSC261_Responsible_DS/
 ├── results/                  # Evaluation results (created after evaluation)
 ├── pyproject.toml           # uv project configuration
 ├── requirements.txt         # Python dependencies
-├── README.md               # This file (quick reference and overview)
-└── GUIDE.md                # Comprehensive implementation guide
+└── README.md                # This file
 ```
 
----
+### Configuration Files (`configs/`)
 
-## Configuration
+All settings customizable via YAML files:
 
-Edit YAML files in `configs/` to customize:
-
-### Retrieval (`retrieval_config.yaml`)
-- Chunk size and overlap
-- Embedding model selection
-- Top-k retrieval settings
-- FAISS index type
-- **Intent-aware strategies** (NEW): Per-intent top-k and diversity settings
-
-### Critic Training (`critic_config.yaml`)
-- Base model selection
-- QLoRA parameters (rank, alpha)
-- Training hyperparameters (epochs, batch size, learning rate)
-- Quantization settings
-- **INTENT token training** (NEW): Fifth reflection token for intent classification
-
-### Generator Training (`generator_config.yaml`)
-- Base model selection
-- Reflection token weights
-- Adaptive retrieval settings
-- Generation parameters (temperature, max tokens)
-- **INSIDE integration** (NEW): Internal state extraction and EigenScore computation
-
-### INSIDE (`inside_config.yaml`) - NEW
-- **EigenScore settings**: Threshold, adaptive calibration
-- **Internal state extraction**: Target layers, extraction position
-- **Intent detection**: Rule-based vs ML-based methods
-- **Combined scoring**: EigenScore weight vs reflection token weight
-
----
+- **retrieval_config.yaml**: Chunk size, embedding model, top-k settings, intent-aware strategies
+- **critic_config.yaml**: Base model, QLoRA params, training hyperparameters, INTENT token
+- **generator_config.yaml**: Reflection token weights, adaptive retrieval, INSIDE integration
+- **inside_config.yaml**: EigenScore threshold, internal state extraction, intent detection
+- **legalbench_config.yaml**: LegalBench-RAG evaluation settings
 
 ## Evaluation Metrics
 
@@ -306,144 +185,27 @@ Edit YAML files in `configs/` to customize:
 - **Feature Clipping Impact**: Comparison of clipped vs unclipped generations
 - **Intent Classification F1**: Precision and recall per intent type
 
----
-
 ## Notebooks
 
-Nine tutorial notebooks provide hands-on learning:
+Ten tutorial notebooks provide hands-on learning:
 
-### Core Self-RAG Notebooks
-1. **00_getting_started.ipynb** - Quick start tutorial (10 minutes)
-2. **01_data_preparation.ipynb** - Load and prepare legal corpus
-3. **02_retrieval_pipeline.ipynb** - Build production-ready retrieval system
-4. **03_self_rag_training.ipynb** - Train critic and generator models
-5. **04_evaluation.ipynb** - Comprehensive performance evaluation
-6. **05_demo.ipynb** - Interactive demonstration
+### Core Self-RAG (Notebooks 00-05)
+1. **00_getting_started.ipynb** - Quick start (10 min)
+2. **01_data_preparation.ipynb** - Load and prepare corpus
+3. **02_retrieval_pipeline.ipynb** - Build retrieval system
+4. **03_self_rag_training.ipynb** - Train critic and generator
+5. **04_evaluation.ipynb** - Performance evaluation
+6. **05_demo.ipynb** - Interactive demo
 
-### INSIDE Integration Notebooks (NEW)
-7. **06_inside_eigenscore.ipynb** - EigenScore and hallucination detection (30-45 min)
+### INSIDE Integration (Notebooks 06-08)
+7. **06_inside_eigenscore.ipynb** - EigenScore hallucination detection (30-45 min)
 8. **07_intent_aware_retrieval.ipynb** - Intent detection and adaptive retrieval (30-45 min)
 9. **08_combined_system.ipynb** - Complete Self-RAG + INSIDE pipeline (45-60 min)
 
-**Workflow**: Run notebooks 00-05 for core Self-RAG, then 06-08 for INSIDE features. Start with 00 for basics.
+### Benchmarking (Notebook 09)
+10. **09_legalbench_benchmark.ipynb** - LegalBench-RAG evaluation
 
----
-
-## Mac GPU (Apple Silicon) Setup
-
-This project is **optimized for Mac GPU (MPS)** on Apple Silicon (M1/M2/M3):
-
-### Quick Setup (Already Configured!)
-
-The configs are already set to use Mac GPU by default:
-- `configs/retrieval_config.yaml`: `device: "mps"`
-- `configs/inside_config.yaml`: `device: 'mps'`
-
-### Verify GPU Support
-
-```bash
-# Check if Mac GPU is available
-uv run python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
-
-# Or use the built-in utility
-uv run python src/utils/device_utils.py
-```
-
-### Performance Benefits
-
-Using Mac GPU (MPS) instead of CPU:
-- **5-10x faster** embedding generation (retrieval)
-- **2-5x faster** INSIDE internal state extraction
-- **Significantly faster** inference
-
-### Switch Between Devices
-
-To use CPU instead of GPU, edit the configs:
-
-```yaml
-# configs/retrieval_config.yaml
-embedding:
-  device: "cpu"  # Change from "mps" to "cpu"
-
-# configs/inside_config.yaml
-performance:
-  device: 'cpu'  # Change from 'mps' to 'cpu'
-```
-
-### Auto-Detection (Optional)
-
-Use the device utility for automatic detection:
-
-```python
-from src.utils import get_optimal_device
-
-device = get_optimal_device()  # Returns 'mps', 'cuda', or 'cpu'
-print(f"Using device: {device}")
-```
-
----
-
-## Troubleshooting
-
-### Mac GPU not working?
-- Requires PyTorch 1.12+ and macOS 12.3+
-- Check: `uv run python -c "import torch; print(torch.__version__)"`
-- Update PyTorch if needed: `uv add torch>=1.12`
-
-### Out of memory during training?
-- Reduce `per_device_train_batch_size` in config (try 1-2)
-- Increase `gradient_accumulation_steps` to maintain effective batch size
-- Close other applications to free memory
-
-### Slow inference?
-- Reduce `max_new_tokens` in config
-- Disable `adaptive_retrieval` temporarily
-- Use smaller embedding models (e.g., all-MiniLM-L6-v2)
-
-### Poor retrieval quality?
-- Increase `chunk_overlap` for better context preservation
-- Adjust `chunk_size` based on document structure
-- Try different embedding models (domain-specific if available)
-
-### Module not found errors?
-- Ensure you're using `uv run` before python commands
-- Or activate the virtual environment:
-  ```bash
-  source .venv/bin/activate  # Unix/Mac
-  .venv\Scripts\activate     # Windows
-  ```
-
----
-
-## Key Design Decisions
-
-### CPU Optimization
-- **4-bit quantization (QLoRA)**: Reduces memory by ~75%
-- **LoRA adapters**: Only ~50MB vs full 7B model (~13GB)
-- **FAISS CPU index**: Efficient vector search without GPU
-- **Batch processing**: Memory-efficient embedding generation
-
-### Modularity
-- Each component works independently
-- Clear interfaces between modules
-- Easy to swap models or strategies
-- Comprehensive configuration via YAML
-
-### Research-Based Implementation
-- **Self-RAG Paper**: 4 reflection tokens, critic-generator architecture
-- **LegalBench-RAG**: RCTS chunking, precision-focused retrieval
-- **QLoRA**: Parameter-efficient fine-tuning for limited resources
-
----
-
-## Getting Help
-
-- **Comprehensive Guide**: See `GUIDE.md` for detailed implementation instructions
-- **Module Documentation**: Every file has extensive docstrings
-- **Working Examples**: Each module has `if __name__ == "__main__"` examples
-- **Tutorial Notebooks**: Learn by doing with 6 hands-on notebooks
-
----
+**Workflow**: Start with 00, run 01-05 for core Self-RAG, then 06-09 for advanced features.
 
 ## LegalBench-RAG Benchmark
 
@@ -492,11 +254,7 @@ LegalBench-RAG provides both **document-level** and **snippet-level** metrics:
 
 **Per-dataset breakdown**: Metrics aggregated by ContractNLI, CUAD, MAUD, PrivacyQA
 
----
-
 ## How INSIDE Enhances Self-RAG
-
-### Complementary Approaches
 
 | Aspect | Self-RAG | INSIDE | Combined Benefit |
 |--------|----------|--------|------------------|
@@ -504,16 +262,13 @@ LegalBench-RAG provides both **document-level** and **snippet-level** metrics:
 | **Signal Source** | Output tokens | Internal embeddings | Diverse evidence |
 | **Hallucination Detection** | ISSUP token | EigenScore | Robust dual detection |
 | **Retrieval** | Adaptive (when needed) | Intent-aware (how to retrieve) | Smart + targeted |
-| **Performance** | ~75% hallucination detection | ~85% hallucination detection | ~90% combined |
 
 ### Key Improvements
 
-1. **15-25% better hallucination detection** via dual verification
-2. **10-20% better retrieval precision** via intent-aware strategies
-3. **New capability**: Automatic intent classification (85-95% accuracy)
-4. **Unified quality score**: Combines multiple signals into single metric
-
----
+1. **Dual verification**: Combines reflection tokens with internal state analysis
+2. **Intent-aware retrieval**: Adaptive strategies based on query type
+3. **Automatic intent classification**: Factual, Exploratory, Comparative, Procedural
+4. **Unified quality score**: Weighted fusion of multiple signals
 
 ## References
 
