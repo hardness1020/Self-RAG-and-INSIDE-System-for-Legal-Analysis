@@ -150,6 +150,29 @@ class INTENTToken(Enum):
         """
 
 
+class PassageMarker:
+    """
+    Passage marker tokens for Self-RAG training.
+
+    Per the Self-RAG paper (Section 3.2.2), retrieved passages are surrounded
+    by <p> and </p> markers and masked from loss calculation during training.
+    """
+    START = "<p>"  # Start of retrieved passage
+    END = "</p>"   # End of retrieved passage
+
+    @staticmethod
+    def get_all_tokens() -> List[str]:
+        return [PassageMarker.START, PassageMarker.END]
+
+    @staticmethod
+    def get_description() -> str:
+        return """
+        Passage Markers:
+        - <p>: Start of retrieved passage (content masked from loss)
+        - </p>: End of retrieved passage
+        """
+
+
 @dataclass
 class ReflectionAnnotation:
     """
@@ -194,13 +217,14 @@ class ReflectionTokenizer:
 
     @staticmethod
     def get_all_special_tokens() -> List[str]:
-        """Get list of all reflection token strings."""
+        """Get list of all reflection token strings including passage markers."""
         all_tokens = []
         all_tokens.extend(INTENTToken.get_all_tokens())
         all_tokens.extend(RetrieveToken.get_all_tokens())
         all_tokens.extend(ISRELToken.get_all_tokens())
         all_tokens.extend(ISSUPToken.get_all_tokens())
         all_tokens.extend(ISUSEToken.get_all_tokens())
+        all_tokens.extend(PassageMarker.get_all_tokens())  # Add passage markers
         return all_tokens
 
     @staticmethod
