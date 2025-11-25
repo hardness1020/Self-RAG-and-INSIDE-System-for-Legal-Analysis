@@ -2,9 +2,9 @@
 Label Generation Module
 
 Generates Self-RAG reflection token labels for training data using:
-1. Local LLM (Qwen2.5-7B-Instruct) - Free and open-source
-2. GPT-4 prompting (if API available)
-3. Rule-based heuristics (fallback)
+1. OpenAI GPT-5.1 (Primary) - Best quality with reasoning
+2. Local LLM (Qwen2.5-7B-Instruct) - Fallback, free and open-source
+3. Rule-based heuristics (Last resort fallback)
 
 Creates training data for both critic and generator models.
 Generates labels for: Retrieve, ISREL, ISSUP, ISUSE tokens.
@@ -20,9 +20,16 @@ import yaml
 from tqdm import tqdm
 import torch
 
-# Optional: OpenAI for GPT-4 labeling
+# Load environment variables from .env file
 try:
-    import openai
+    from dotenv import load_dotenv
+    load_dotenv()  # Loads OPENAI_API_KEY and other env vars from .env
+except ImportError:
+    pass  # python-dotenv not installed, env vars must be set manually
+
+# Optional: OpenAI for GPT-5.1 labeling
+try:
+    from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
@@ -53,10 +60,11 @@ class LabelGenerator:
 
     def __init__(
         self,
+        use_openai: bool = True,
         use_local_llm: bool = True,
-        use_gpt4: bool = False,
         openai_api_key: Optional[str] = None,
-        model: str = "gpt-4",
+        model: str = "gpt-5.1",
+        reasoning_effort: str = "auto",
         local_model: str = "Qwen/Qwen2.5-7B-Instruct",
         device: Optional[str] = None,
     ):
@@ -64,19 +72,40 @@ class LabelGenerator:
         Initialize label generator.
 
         Args:
-            use_local_llm: Whether to use local LLM (Qwen) for labeling
-            use_gpt4: Whether to use GPT-4 for labeling
-            openai_api_key: OpenAI API key
-            model: OpenAI model to use
+            use_openai: Whether to use OpenAI API (GPT-5.1) for labeling (primary)
+            use_local_llm: Whether to use local LLM (Qwen) as fallback
+            openai_api_key: OpenAI API key (reads from OPENAI_API_KEY env if not provided)
+            model: OpenAI model to use (default: gpt-5.1)
+            reasoning_effort: Reasoning effort level for GPT-5.1 ("auto", "none", "low", "medium", "high")
             local_model: Local LLM model name
             device: Device for local LLM (None for auto-detect)
         """
+        self.use_openai = use_openai and OPENAI_AVAILABLE
         self.use_local_llm = use_local_llm and TRANSFORMERS_AVAILABLE
-        self.use_gpt4 = use_gpt4 and OPENAI_AVAILABLE
+        self.openai_client = None
         self.local_model = None
         self.local_tokenizer = None
+        self.model = model
+        self.reasoning_effort = reasoning_effort
 
-        # Priority: Local LLM > GPT-4 > Rule-based
+        # Priority: OpenAI GPT-5.1 > Local LLM > Rule-based
+        if self.use_openai:
+            try:
+                if openai_api_key:
+                    self.openai_client = OpenAI(api_key=openai_api_key)
+                elif 'OPENAI_API_KEY' in os.environ:
+                    self.openai_client = OpenAI()  # Uses OPENAI_API_KEY env var
+                else:
+                    print("Warning: OpenAI requested but no API key found. Will fall back to local LLM.")
+                    self.use_openai = False
+
+                if self.use_openai:
+                    print(f"✓ Primary: OpenAI {model} (reasoning_effort={reasoning_effort})")
+            except Exception as e:
+                print(f"Error initializing OpenAI client: {e}")
+                print("Falling back to local LLM.")
+                self.use_openai = False
+
         if self.use_local_llm:
             try:
                 print(f"Loading local LLM: {local_model}...")
@@ -104,23 +133,16 @@ class LabelGenerator:
 
                 self.local_model.eval()
                 self.device = device
-                print("Local LLM loaded successfully!")
+                if self.use_openai:
+                    print(f"✓ Fallback: Qwen {local_model.split('/')[-1]} (Local)")
+                else:
+                    print(f"✓ Primary: Qwen {local_model.split('/')[-1]} (Local)")
 
             except Exception as e:
                 print(f"Error loading local LLM: {e}")
-                print("Falling back to rule-based approach.")
+                if not self.use_openai:
+                    print("Falling back to rule-based approach.")
                 self.use_local_llm = False
-
-        elif self.use_gpt4:
-            if openai_api_key:
-                openai.api_key = openai_api_key
-            elif 'OPENAI_API_KEY' in os.environ:
-                openai.api_key = os.environ['OPENAI_API_KEY']
-            else:
-                print("Warning: GPT-4 requested but no API key found. Using rule-based approach.")
-                self.use_gpt4 = False
-
-        self.model = model
 
     def generate_retrieve_label(
         self,
@@ -137,16 +159,16 @@ class LabelGenerator:
         Returns:
             Retrieve token value
         """
-        if self.use_local_llm:
-            return self._local_llm_label(
+        if self.use_openai:
+            return self._openai_label(
                 prompt=GPT4_PROMPTS['retrieve'].format(
                     question=question,
                     answer=answer,
                 ),
                 valid_tokens=RetrieveToken.get_all_tokens(),
             )
-        elif self.use_gpt4:
-            return self._gpt4_label(
+        elif self.use_local_llm:
+            return self._local_llm_label(
                 prompt=GPT4_PROMPTS['retrieve'].format(
                     question=question,
                     answer=answer,
@@ -181,16 +203,16 @@ class LabelGenerator:
         Returns:
             ISREL token value
         """
-        if self.use_local_llm:
-            return self._local_llm_label(
+        if self.use_openai:
+            return self._openai_label(
                 prompt=GPT4_PROMPTS['isrel'].format(
                     question=question,
                     passage=passage,
                 ),
                 valid_tokens=ISRELToken.get_all_tokens(),
             )
-        elif self.use_gpt4:
-            return self._gpt4_label(
+        elif self.use_local_llm:
+            return self._local_llm_label(
                 prompt=GPT4_PROMPTS['isrel'].format(
                     question=question,
                     passage=passage,
@@ -233,8 +255,8 @@ class LabelGenerator:
         Returns:
             ISSUP token value
         """
-        if self.use_local_llm:
-            return self._local_llm_label(
+        if self.use_openai:
+            return self._openai_label(
                 prompt=GPT4_PROMPTS['issup'].format(
                     question=question,
                     passage=passage,
@@ -242,8 +264,8 @@ class LabelGenerator:
                 ),
                 valid_tokens=ISSUPToken.get_all_tokens(),
             )
-        elif self.use_gpt4:
-            return self._gpt4_label(
+        elif self.use_local_llm:
+            return self._local_llm_label(
                 prompt=GPT4_PROMPTS['issup'].format(
                     question=question,
                     passage=passage,
@@ -286,16 +308,16 @@ class LabelGenerator:
         Returns:
             ISUSE token value
         """
-        if self.use_local_llm:
-            return self._local_llm_label(
+        if self.use_openai:
+            return self._openai_label(
                 prompt=GPT4_PROMPTS['isuse'].format(
                     question=question,
                     answer=answer,
                 ),
                 valid_tokens=ISUSEToken.get_all_tokens(),
             )
-        elif self.use_gpt4:
-            return self._gpt4_label(
+        elif self.use_local_llm:
+            return self._local_llm_label(
                 prompt=GPT4_PROMPTS['isuse'].format(
                     question=question,
                     answer=answer,
@@ -386,7 +408,7 @@ class LabelGenerator:
             with torch.no_grad():
                 outputs = self.local_model.generate(
                     **inputs,
-                    max_new_tokens=50,
+                    max_new_tokens=1000,  # Increased for complete label generation
                     temperature=0.1,
                     do_sample=False,
                     pad_token_id=self.local_tokenizer.eos_token_id,
@@ -412,32 +434,42 @@ class LabelGenerator:
             # Fallback to first valid token
             return valid_tokens[0]
 
-    def _gpt4_label(
+    def _openai_label(
         self,
         prompt: str,
         valid_tokens: List[str],
     ) -> str:
         """
-        Get label from GPT-4.
+        Get label from OpenAI (GPT-5.1).
 
         Args:
-            prompt: Prompt for GPT-4
+            prompt: Prompt for the model
             valid_tokens: List of valid token values
 
         Returns:
             Token value
         """
         try:
-            response = openai.ChatCompletion.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that labels data for training."},
+            # Build request parameters
+            request_params = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant that labels data for training Self-RAG models. Respond with ONLY the exact token requested, nothing else."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.0,
-                max_tokens=50,
-            )
+                "temperature": 0.0,
+            }
 
+            # GPT-5 models use max_completion_tokens, older models use max_tokens
+            if self.model.startswith("gpt-5"):
+                request_params["max_completion_tokens"] = 1000  # GPT-5.1 parameter
+                # Add reasoning_effort for GPT-5.1 if not 'auto'
+                if self.reasoning_effort != "auto":
+                    request_params["reasoning_effort"] = self.reasoning_effort
+            else:
+                request_params["max_tokens"] = 1000  # GPT-4 and earlier
+
+            response = self.openai_client.chat.completions.create(**request_params)
             generated = response.choices[0].message.content.strip()
 
             # Extract token from response
@@ -446,20 +478,27 @@ class LabelGenerator:
                     return token
 
             # Default to first token if none found
+            print(f"Warning: Could not extract token from OpenAI response: {generated[:100]}")
             return valid_tokens[0]
 
         except Exception as e:
-            print(f"Error calling GPT-4: {e}")
-            # Fallback to first valid token
+            print(f"Error calling OpenAI API: {e}")
+            # Fall back to local LLM if available
+            if self.use_local_llm:
+                print("Falling back to local LLM...")
+                return self._local_llm_label(prompt, valid_tokens)
+            # Otherwise fallback to first valid token
             return valid_tokens[0]
 
 
 def process_dataset(
     input_file: str,
     output_dir: str,
+    use_openai: bool = True,
     use_local_llm: bool = True,
-    use_gpt4: bool = False,
     num_samples: Optional[int] = None,
+    openai_model: str = "gpt-5.1",
+    reasoning_effort: str = "auto",
     local_model: str = "Qwen/Qwen2.5-7B-Instruct",
 ):
     """
@@ -468,9 +507,11 @@ def process_dataset(
     Args:
         input_file: Path to input JSON file with QA examples
         output_dir: Directory to save labeled data
-        use_local_llm: Whether to use local LLM (Qwen) for labeling
-        use_gpt4: Whether to use GPT-4 for labeling
+        use_openai: Whether to use OpenAI API (GPT-5.1) as primary
+        use_local_llm: Whether to use local LLM (Qwen) as fallback
         num_samples: Number of samples to process (None for all)
+        openai_model: OpenAI model to use
+        reasoning_effort: Reasoning effort level for GPT-5.1
         local_model: Local LLM model name
     """
     # Load dataset
@@ -482,8 +523,10 @@ def process_dataset(
 
     # Initialize generator
     generator = LabelGenerator(
+        use_openai=use_openai,
         use_local_llm=use_local_llm,
-        use_gpt4=use_gpt4,
+        model=openai_model,
+        reasoning_effort=reasoning_effort,
         local_model=local_model,
     )
 
@@ -536,21 +579,45 @@ if __name__ == "__main__":
         help="Output directory for labeled data",
     )
     parser.add_argument(
+        "--use-openai",
+        action="store_true",
+        default=True,
+        help="Use OpenAI API (GPT-5.1) as primary (default: True, requires OPENAI_API_KEY)",
+    )
+    parser.add_argument(
+        "--no-openai",
+        action="store_true",
+        help="Disable OpenAI and use only local LLM",
+    )
+    parser.add_argument(
+        "--openai-model",
+        type=str,
+        default="gpt-5.1",
+        help="OpenAI model to use (default: gpt-5.1)",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        type=str,
+        default="auto",
+        choices=["auto", "none", "low", "medium", "high"],
+        help="Reasoning effort for GPT-5.1 (default: auto)",
+    )
+    parser.add_argument(
         "--use-local-llm",
         action="store_true",
         default=True,
-        help="Use local LLM (Qwen) for labeling (default: True)",
+        help="Use local LLM (Qwen) as fallback (default: True)",
+    )
+    parser.add_argument(
+        "--no-local-llm",
+        action="store_true",
+        help="Disable local LLM fallback",
     )
     parser.add_argument(
         "--local-model",
         type=str,
         default="Qwen/Qwen2.5-7B-Instruct",
         help="Local LLM model name",
-    )
-    parser.add_argument(
-        "--use-gpt4",
-        action="store_true",
-        help="Use GPT-4 for labeling (requires API key, overrides --use-local-llm)",
     )
     parser.add_argument(
         "--num-samples",
@@ -564,8 +631,10 @@ if __name__ == "__main__":
     process_dataset(
         input_file=args.input,
         output_dir=args.output_dir,
-        use_local_llm=args.use_local_llm and not args.use_gpt4,
-        use_gpt4=args.use_gpt4,
+        use_openai=args.use_openai and not args.no_openai,
+        use_local_llm=args.use_local_llm and not args.no_local_llm,
         num_samples=args.num_samples,
+        openai_model=args.openai_model,
+        reasoning_effort=args.reasoning_effort,
         local_model=args.local_model,
     )
