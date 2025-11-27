@@ -4,7 +4,9 @@ This directory contains a comprehensive tutorial series for the **Self-RAG + INS
 
 ## Overview
 
-These interactive Jupyter notebooks guide you through building, training, evaluating, and deploying a production-ready legal RAG system. The tutorials progress from basic retrieval concepts to advanced hallucination detection and intent-aware retrieval, culminating in evaluation against the LegalBench-RAG benchmark.
+These interactive Jupyter notebooks (13 total) guide you through building, training, evaluating, and deploying a production-ready legal RAG system. The tutorials progress from basic retrieval concepts to advanced hallucination detection and intent-aware retrieval, culminating in evaluation against the LegalBench-RAG benchmark.
+
+**Note**: For LegalBench evaluation, use the **pre-trained Self-RAG GGUF** approach (notebook 10a) which works out of the box. Custom training (notebook 10b) is experimental and requires a larger model.
 
 
 ## Notebooks
@@ -189,35 +191,68 @@ Query → Intent Detection → Adaptive Retrieval → Self-RAG Generation
 
 ---
 
-#### 10. LegalBench Training (2-3 hours) 🚧
-**Train production-quality Self-RAG models on LegalBench mini dataset**
+#### 10a. Pre-trained Self-RAG with GGUF Conversion (30-60 minutes) ✅ **Recommended**
+**Use official pre-trained Self-RAG 7B model for efficient inference**
 
-- Loading LegalBench training labels (776 queries)
-- Training generator with LoRA on legal Q&A pairs
-- Training critic to predict reflection tokens
-- Full training/validation split with stratification
-- Comprehensive training visualizations and metrics
+- Downloading pre-trained selfrag_llama2_7b from HuggingFace
+- Converting to GGUF format using llama.cpp
+- Quantizing to Q4_K_M (~4GB, fits 16GB Mac)
+- Validating reflection tokens work after conversion
+- Using `SelfRAGGGUFInference` class with Metal acceleration
+- Integrating with existing `LegalRetriever` for full RAG pipeline
+- Evaluating on LegalBench queries (50 queries evaluated)
 
-**Training Data**: 776 queries from LegalBench mini (ContractNLI, CUAD, MAUD, PrivacyQA)
-**Output**: Production LoRA adapters in `models/generator_legalbench_lora/` and `models/critic_legalbench_lora/`
+**Model**: selfrag/selfrag_llama2_7b → Q4_K_M GGUF (~4GB)
+**Output**: Evaluation results in `results/selfrag_7b_gguf_evaluation.json`
+**Key Insight**: Pre-trained model already learned reflection tokens on 150k examples
 
-**Status**: 🚧 Work in Progress - Training labels generated, training pipeline ready but not yet executed
+**Status**: ✅ Complete - Model converted, tokens validated, evaluation run
 
 ---
 
-#### 11. LegalBench Generation Evaluation (1-2 hours) 🚧
-**Compare generation methods on LegalBench benchmark**
+#### 10b. Custom Self-RAG Training (30-60 minutes) ⚠️ Experimental
+**Attempt to train Self-RAG from scratch on LegalBench data**
+
+- Generating training labels with GPT-5.1 (776 queries)
+- Training Qwen2.5-0.5B with QLoRA on Self-RAG interleaved format
+- Interleaved token format: `[Retrieve]<p>passage</p>[ISREL]answer[ISSUP][ISUSE]`
+- Passage masking in loss calculation
+- Vocabulary expansion with 20 special tokens
+
+**Result**: ⚠️ **Model failed to learn the Self-RAG pattern**
+- Qwen2.5-0.5B is too small (494M params) to learn the interleaved token format
+- Generated outputs lack reflection tokens
+- Loss remained high (~2.2) after training
+
+**Recommendations**:
+- Use pre-trained Self-RAG GGUF (notebook 10a) instead
+- For custom training: Use 7B+ model or fine-tune GPT-4o-mini (~$9 for 776 examples)
+
+**Status**: ⚠️ Experimental - Training code works but model too small
+
+---
+
+#### 11. LegalBench Generation Evaluation (1-2 hours) ✅
+**Compare generation methods on LegalBench benchmark using pre-trained Self-RAG GGUF**
 
 - Method comparison: No-RAG, Basic RAG, Self-RAG, Self-RAG+INSIDE
 - Generation quality metrics (F1, ROUGE-L, hallucination rate, utility)
 - Per-subdataset performance breakdown
 - Multi-metric radar charts and visualizations
 - Example outputs with side-by-side comparison
+- EigenScore hallucination detection using external encoder (~79% AUROC)
 
-**Evaluation Set**: 776 queries (or 50-query subset for testing)
-**Output**: Comprehensive comparison in `results/generation_results.json` with visualizations
+**Evaluation Results (10-query subset)**:
+| Method | F1 | ROUGE-L | Halluc% (ISSUP) |
+|--------|-----|---------|-----------------|
+| No-RAG | 0.200 | 0.141 | 70.0% |
+| Basic RAG | 0.248 | 0.176 | 0.0% |
+| Self-RAG | 0.200 | 0.141 | 70.0% |
+| Self-RAG+INSIDE | 0.247 | 0.170 | 0.0% |
 
-**Status**: 🚧 Work in Progress - Evaluation pipeline ready, pending trained models from notebook 10
+**Output**: Results in `results/generation_results_subset.json` with visualizations
+
+**Status**: ✅ Complete - Subset evaluation done, full evaluation ready
 
 ---
 
@@ -250,10 +285,14 @@ Complete Path 1, then:
 Complete Paths 1 & 2, then work with the production LegalBench-RAG dataset:
 
 10. `09_legalbench_retrieval.ipynb` (60-90 min) - Retrieval evaluation ✅
-11. `10_legalbench_training.ipynb` (2-3 hours) - Train on 776 queries 🚧
-12. `11_legalbench_generation.ipynb` (1-2 hours) - Generation evaluation 🚧
+11. `10_legalbench_pretrained_selfrag.ipynb` (30-60 min) - Pre-trained Self-RAG GGUF ✅ **Recommended**
+12. `10_legalbench_training.ipynb` (30-60 min) - Custom training ⚠️ Experimental (optional)
+13. `11_legalbench_generation.ipynb` (1-2 hours) - Generation evaluation ✅
 
 **Progress**:
 - ✅ Retrieval evaluation complete with strong results (P@1: 55.93%, R@64: 84.41%)
-- 🚧 Training pipeline ready, labels generated (776 queries from 4 subdatasets)
-- 🚧 Generation evaluation pipeline ready, pending trained models
+- ✅ Pre-trained Self-RAG 7B converted to GGUF, tokens validated, evaluation run
+- ⚠️ Custom training attempted but Qwen2.5-0.5B too small (use 7B+ for production)
+- ✅ Generation evaluation complete with 4 methods compared (No-RAG, Basic RAG, Self-RAG, Self-RAG+INSIDE)
+
+**Key Insight**: Use the pre-trained GGUF model (notebook 10a) for best results. Custom training (notebook 10b) requires a larger base model to learn the Self-RAG reflection token pattern.

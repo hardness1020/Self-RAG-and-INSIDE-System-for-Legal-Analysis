@@ -121,7 +121,11 @@ DSC261_Responsible_DS/
 │   ├── retrieval/            # Retrieval pipeline (chunking, embedding, indexing)
 │   │   └── inside_retriever.py  # Intent-aware retrieval wrapper
 │   ├── self_rag/             # Self-RAG system (reflection tokens, critic, generator)
-│   │   └── inside_generator.py  # INSIDE-enhanced generator
+│   │   ├── gguf_inference.py    # GGUF model inference with llama.cpp (SelfRAGGGUFInference)
+│   │   ├── inside_generator.py  # INSIDE-enhanced generator
+│   │   ├── inference.py         # Standard Self-RAG inference pipeline
+│   │   ├── generator.py         # SelfRAGGenerator for custom training
+│   │   └── critic.py            # CriticModel for reflection token prediction
 │   ├── inside/               # INSIDE framework (NEW)
 │   │   ├── internal_states.py   # Internal state extraction
 │   │   ├── eigenscore.py        # EigenScore computation
@@ -142,8 +146,9 @@ DSC261_Responsible_DS/
 │   ├── 07_intent_aware_retrieval.ipynb  # Intent-aware retrieval (NEW)
 │   ├── 08_combined_system.ipynb         # Complete system demo (NEW)
 │   ├── 09_legalbench_retrieval.ipynb    # LegalBench retrieval evaluation
-│   ├── 10_legalbench_training.ipynb     # LegalBench production training 🚧
-│   └── 11_legalbench_generation.ipynb   # LegalBench generation evaluation 🚧
+│   ├── 10_legalbench_pretrained_selfrag.ipynb  # Pre-trained Self-RAG 7B GGUF ✅ (Recommended)
+│   ├── 10_legalbench_training.ipynb     # Self-RAG training ⚠️ (Experimental - Qwen too small)
+│   └── 11_legalbench_generation.ipynb   # Generation method comparison ✅
 ├── configs/                  # YAML configuration files
 │   ├── retrieval_config.yaml
 │   ├── critic_config.yaml
@@ -190,7 +195,7 @@ All settings customizable via YAML files:
 
 ## Notebooks
 
-Twelve tutorial notebooks provide hands-on learning:
+Thirteen tutorial notebooks provide hands-on learning:
 
 ### Core Self-RAG (Notebooks 00-05)
 1. **00_getting_started.ipynb** - Quick start (10 min)
@@ -209,10 +214,15 @@ Twelve tutorial notebooks provide hands-on learning:
 
 ### LegalBench Dataset (Notebooks 09-11)
 10. **09_legalbench_retrieval.ipynb** - Retrieval evaluation on LegalBench-RAG (60-90 min) ✅
-11. **10_legalbench_training.ipynb** - Production training on 776 queries (2-3 hours) 🚧
-12. **11_legalbench_generation.ipynb** - Generation method comparison (1-2 hours) 🚧
+11. **10_legalbench_pretrained_selfrag.ipynb** - Pre-trained Self-RAG 7B GGUF (30-60 min) ✅ **Recommended**
+12. **10_legalbench_training.ipynb** - Custom Self-RAG training (30-60 min) ⚠️ Experimental
+13. **11_legalbench_generation.ipynb** - Generation method comparison (1-2 hours) ✅
 
-**Workflow**: Start with 00, run 01-05 for core Self-RAG, then 06-08 for INSIDE features, and finally 09-11 for LegalBench evaluation and production training.
+**Note on Notebook 10**: Two approaches are available:
+- **Pretrained GGUF (Recommended)**: Uses official `selfrag_llama2_7b` model converted to GGUF. Works out of the box with validated reflection tokens.
+- **Custom Training (Experimental)**: Attempts to train Qwen2.5-0.5B on Self-RAG format. Model too small to learn the interleaved token pattern. Requires 7B+ model for production use.
+
+**Workflow**: Start with 00, run 01-05 for core Self-RAG, then 06-08 for INSIDE features, and finally 09-11 for LegalBench evaluation with pre-trained Self-RAG GGUF.
 
 ## LegalBench-RAG Benchmark
 

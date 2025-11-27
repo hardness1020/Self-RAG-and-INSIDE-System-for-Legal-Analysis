@@ -1,11 +1,11 @@
 """
-Generate training labels for LegalBench mini dataset using free Qwen model.
+Generate training labels for LegalBench mini dataset using OpenAI GPT-5.1.
 
 This script:
 1. Loads LegalBench mini queries (776 samples)
 2. Uses existing retriever to get passages for each query
 3. Uses ground truth snippets as "answers"
-4. Generates reflection token labels using Qwen2.5-7B-Instruct
+4. Generates reflection token labels using GPT-5.1 (primary) with Qwen fallback
 5. Saves labeled data for training Self-RAG models
 """
 
@@ -29,6 +29,11 @@ def create_training_examples(
     retriever_index_path: str = "data/legalbench_embeddings",
     num_samples: int = 776,  # Mini dataset size
     output_dir: str = "data/training",
+    use_openai: bool = True,
+    openai_model: str = "gpt-5.1",
+    reasoning_effort: str = "auto",
+    use_local_llm: bool = True,
+    local_model: str = "Qwen/Qwen2.5-7B-Instruct",
 ):
     """
     Create training examples with reflection token labels.
@@ -38,6 +43,11 @@ def create_training_examples(
         retriever_index_path: Path to FAISS index
         num_samples: Number of queries to process
         output_dir: Output directory for labeled data
+        use_openai: Whether to use OpenAI API (primary)
+        openai_model: OpenAI model to use
+        reasoning_effort: Reasoning effort for GPT-5.1
+        use_local_llm: Whether to use local LLM (fallback)
+        local_model: Local LLM model name
     """
     print("=" * 80)
     print("LegalBench Label Generation for Self-RAG Training")
@@ -70,11 +80,14 @@ def create_training_examples(
     print(f"Retriever loaded successfully!")
     print()
 
-    # Initialize label generator with Qwen
-    print("Initializing label generator with Qwen2.5-7B-Instruct...")
+    # Initialize label generator
+    print("Initializing label generator...")
     generator = LabelGenerator(
-        use_local_llm=True,
-        local_model="Qwen/Qwen2.5-7B-Instruct",
+        use_openai=use_openai,
+        use_local_llm=use_local_llm,
+        model=openai_model,
+        reasoning_effort=reasoning_effort,
+        local_model=local_model,
     )
     print()
 
@@ -201,6 +214,41 @@ if __name__ == "__main__":
         default="data/training",
         help="Output directory for labeled data",
     )
+    parser.add_argument(
+        "--use-openai",
+        action="store_true",
+        default=True,
+        help="Use OpenAI API (GPT-5.1) as primary (default: True)",
+    )
+    parser.add_argument(
+        "--no-openai",
+        action="store_true",
+        help="Disable OpenAI and use only local LLM",
+    )
+    parser.add_argument(
+        "--openai-model",
+        type=str,
+        default="gpt-5.1",
+        help="OpenAI model to use (default: gpt-5.1)",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        type=str,
+        default="auto",
+        choices=["auto", "none", "low", "medium", "high"],
+        help="Reasoning effort for GPT-5.1 (default: auto)",
+    )
+    parser.add_argument(
+        "--local-model",
+        type=str,
+        default="Qwen/Qwen2.5-7B-Instruct",
+        help="Local LLM model for fallback",
+    )
+    parser.add_argument(
+        "--no-local-llm",
+        action="store_true",
+        help="Disable local LLM fallback",
+    )
 
     args = parser.parse_args()
 
@@ -209,4 +257,9 @@ if __name__ == "__main__":
         retriever_index_path=args.index,
         num_samples=args.num_samples,
         output_dir=args.output_dir,
+        use_openai=args.use_openai and not args.no_openai,
+        openai_model=args.openai_model,
+        reasoning_effort=args.reasoning_effort,
+        use_local_llm=not args.no_local_llm,
+        local_model=args.local_model,
     )

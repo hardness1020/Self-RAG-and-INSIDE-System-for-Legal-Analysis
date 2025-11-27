@@ -22,7 +22,7 @@ class RetrieveToken(Enum):
 
     Determines whether to retrieve external knowledge.
     """
-    YES = "[Retrieve]"
+    YES = "[Retrieval]"  # Model uses [Retrieval] not [Retrieve]
     NO = "[No Retrieval]"
     CONTINUE = "[Continue to Use Evidence]"
 
@@ -68,9 +68,9 @@ class ISSUPToken(Enum):
 
     Evaluates whether the response is supported by retrieved evidence.
     """
-    FULLY_SUPPORTED = "[Fully Supported]"
-    PARTIALLY_SUPPORTED = "[Partially Supported]"
-    NO_SUPPORT = "[No Support]"
+    FULLY_SUPPORTED = "[Fully supported]"  # lowercase 's' to match model
+    PARTIALLY_SUPPORTED = "[Partially supported]"  # lowercase 's' to match model
+    NO_SUPPORT = "[No support / Contradictory]"  # match model token
 
     @staticmethod
     def get_all_tokens() -> List[str]:
