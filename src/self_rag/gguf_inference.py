@@ -1,3 +1,8 @@
+# Suppress Metal kernel init messages BEFORE any imports
+# Must be at absolute top to take effect before llama_cpp loads
+import os
+os.environ["GGML_METAL_LOG_LEVEL"] = "0"
+
 """
 Self-RAG GGUF Inference Module
 
@@ -5,7 +10,14 @@ Provides inference using pre-trained Self-RAG models converted to GGUF format
 for efficient execution on Mac with Metal acceleration via llama.cpp.
 
 Includes INSIDE (INternal States for hallucInation DEtection) integration
-via multi-generation EigenScore computation using final layer embeddings.
+via multi-generation EigenScore computation using external embeddings.
+
+OPTIMIZATION: Uses a single persistent model with reset() between generations
+instead of load-delete-reload pattern. This reduces model loads from ~9,300
+to just 1 for full evaluation (776 queries × 4 methods).
+
+The retrieval check uses token sampling (like the official Self-RAG fallback)
+instead of logits_all=True which caused memory overflow (-3 errors) on llama-cpp.
 """
 
 import re
@@ -14,16 +26,79 @@ import gc
 from typing import Dict, Optional, List, Any, Tuple
 from dataclasses import dataclass, field
 import numpy as np
-import os
-
-# Suppress Metal kernel init messages (BF16 "not supported" warnings)
-os.environ["GGML_METAL_LOG_LEVEL"] = "0"
 
 from src.self_rag.reflection_tokens import ReflectionTokenizer
 
 # INSIDE constants
-EIGENSCORE_THRESHOLD = -5.0  # Higher values indicate potential hallucination
-DEFAULT_NUM_GENERATIONS = 7  # K generations for EigenScore computation (reduced from 10)
+EIGENSCORE_THRESHOLD = -2.0  # Calibrated for LegalBench (No-RAG≈-1, RAG≈-3)
+DEFAULT_NUM_GENERATIONS = 10  # K generations for EigenScore computation
+
+
+def compute_eigenscore(
+    answers: List[str],
+    embedding_model: Any,
+    alpha: float = 0.001,
+    threshold: float = EIGENSCORE_THRESHOLD,
+) -> Tuple[float, bool]:
+    """
+    Compute EigenScore for any list of answer strings (INSIDE paper, ICLR 2024).
+
+    This is a STANDALONE function that works with ANY generation method.
+    EigenScore measures semantic consistency across multiple generations.
+    Higher EigenScore = more diverse responses = higher hallucination risk.
+
+    Formula (per paper Section 3.1):
+    - Z ∈ R^(d×K): each column is a sentence embedding
+    - Σ = Z^T · J_d · Z: K×K covariance matrix (centered)
+    - EigenScore = (1/K) * Σ log(λ_i + α)
+
+    Args:
+        answers: List of K generated answer strings
+        embedding_model: Encoder with encode() method (e.g., sentence-transformers)
+        alpha: Regularization term (default 0.001 per INSIDE paper)
+        threshold: Threshold for hallucination detection (default -5.0)
+
+    Returns:
+        Tuple of (eigenscore, hallucination_detected)
+    """
+    if len(answers) < 2:
+        return 0.0, False
+
+    K = len(answers)
+
+    # Embed all answers using external encoder
+    embeddings = []
+    for answer in answers:
+        if answer:
+            emb = embedding_model.encode(answer)
+            embeddings.append(np.array(emb).squeeze())
+
+    if len(embeddings) < 2:
+        return 0.0, False
+
+    # Z: (d, K) - each column is a sentence embedding
+    Z = np.column_stack(embeddings)
+
+    # Center embeddings (per paper Eq. 4: J_d · z = z - mean(z))
+    Z_centered = Z - Z.mean(axis=0, keepdims=True)
+
+    # Compute K×K covariance matrix: Σ = Z_centered^T · Z_centered
+    Sigma = Z_centered.T @ Z_centered
+
+    # Add regularization to ensure full rank (per paper Eq. 5)
+    Sigma_reg = Sigma + alpha * np.eye(K)
+
+    # Compute eigenvalues
+    eigenvalues = np.linalg.eigvalsh(Sigma_reg)
+    eigenvalues = np.clip(eigenvalues, 1e-10, None)
+
+    # EigenScore = (1/K) * Σ log(λ_i) (per paper Eq. 6)
+    eigenscore = float(np.mean(np.log(eigenvalues)))
+
+    # Detect hallucination
+    hallucination_detected = eigenscore > threshold
+
+    return eigenscore, hallucination_detected
 
 
 @dataclass
@@ -59,8 +134,10 @@ class SelfRAGGGUFInference:
     Integrates with existing LegalRetriever for passage retrieval.
     Designed for Mac M-series chips with Metal acceleration.
 
-    Uses fresh model instance per generation to avoid KV cache corruption
-    issues with llama-cpp-python on Metal backend.
+    OPTIMIZATION: Uses a single persistent model with reset() between
+    generations instead of load-delete-reload pattern. The retrieval check
+    uses token sampling (like official Self-RAG fallback) instead of
+    logits_all=True which caused memory overflow (-3 errors).
 
     Example usage:
         >>> inference = SelfRAGGGUFInference("models/selfrag_llama2_7b.Q4_K_M.gguf")
@@ -85,86 +162,61 @@ class SelfRAGGGUFInference:
         verbose: bool = False,
     ):
         """
-        Initialize GGUF model configuration for inference.
+        Initialize GGUF model and load it persistently.
 
-        Note: Model is NOT loaded here. A fresh instance is created for each
-        generation call to avoid KV cache corruption on Metal backend.
+        OPTIMIZATION: Single model is loaded ONCE at init and reused for ALL
+        operations including retrieval check. Uses reset() to clear KV cache
+        between generations instead of reloading.
 
-        Uses TWO configs:
-        - _gen_config: logits_all=False for text generation (prevents memory overflow)
-        - _logprobs_config: logits_all=True only for retrieval check (needs token probs)
+        The retrieval check uses token sampling (generate 1 token, check if
+        it's [Retrieval] or [No Retrieval]) instead of logits_all=True which
+        caused memory overflow (-3 errors) on long prompts.
 
         Args:
             model_path: Path to the GGUF model file
-            n_ctx: Context window size (default 4096)
+            n_ctx: Context window size (default 2048)
             n_gpu_layers: Number of layers to offload to GPU (-1 = all for Metal)
             verbose: Whether to show llama.cpp verbose output
         """
         try:
             from llama_cpp import Llama
-            self._Llama = Llama  # Store class reference for creating fresh instances
+            self._Llama = Llama
         except ImportError:
             raise ImportError(
                 "llama-cpp-python is required for GGUF inference. "
                 "Install with: CMAKE_ARGS='-DLLAMA_METAL=on' pip install llama-cpp-python"
             )
 
-        # Config for generation (logits_all=False - don't store intermediate logits)
-        # This prevents 'llama_decode returned -3' memory overflow errors
+        # Single model config (no logits_all=True needed - we use token sampling)
         self._gen_config = {
             'model_path': model_path,
             'n_ctx': n_ctx,
-            'n_batch': 512,  # Batch size for prompt processing (prevents KV cache overflow)
+            'n_batch': 512,  # Batch size for prompt processing
             'n_gpu_layers': n_gpu_layers,
             'verbose': verbose,
-            'logits_all': False,  # KEY: False for generation to prevent overflow
-            'embedding': False,
-        }
-
-        # Config for retrieval check (needs logprobs for token probabilities)
-        # logits_all=True stores logits for ALL tokens, but we only need prompt + 1 token
-        self._logprobs_config = {
-            'model_path': model_path,
-            'n_ctx': n_ctx,  # Use same context as generation config
-            'n_batch': 512,  # Batch size for prompt processing (prevents KV cache overflow)
-            'n_gpu_layers': n_gpu_layers,
-            'verbose': verbose,
-            'logits_all': True,  # Only True when we need logprobs
+            'logits_all': False,  # KEY: Always False to prevent -3 overflow errors
             'embedding': False,
         }
 
         self.model_path = model_path
-        self._llm = None  # Not pre-loaded - load on-demand to avoid memory issues
 
-        print(f"Model configured: {model_path}")
-        print("Note: Model loaded on-demand per query (load-delete-reload pattern)")
+        # Load single persistent model
+        print(f"Loading Self-RAG model: {model_path}")
+        self._llm = self._Llama(**self._gen_config)
+        print("✓ Model loaded (persistent, single instance for all operations)")
 
-    def _get_fresh_model(self):
+    def _get_gen_model(self):
         """
-        Load a fresh Llama instance for text generation.
+        Get the persistent generation model with reset KV cache.
 
-        Creates new model with logits_all=False configuration.
-        Caller is responsible for deleting after use with:
-            del llm; gc.collect()
+        Returns the persistent self._llm instance after calling reset()
+        to clear the KV cache from previous generations.
 
         Returns:
-            Llama instance with logits_all=False
+            Llama instance with logits_all=False (persistent)
         """
-        return self._Llama(**self._gen_config)
-
-    def _get_logprobs_model(self):
-        """
-        Load a fresh Llama instance for retrieval check with logprobs.
-
-        Creates new model with logits_all=True configuration.
-        This is required for getting token probabilities.
-        Caller is responsible for deleting after use with:
-            del llm; gc.collect()
-
-        Returns:
-            Llama instance with logits_all=True
-        """
-        return self._Llama(**self._logprobs_config)
+        self._llm.reset()  # Clear KV cache from previous generation
+        return self._llm
 
     def _format_prompt(
         self,
@@ -210,62 +262,52 @@ class SelfRAGGGUFInference:
         threshold: float = 0.5,
     ) -> Tuple[bool, float]:
         """
-        Check if retrieval is needed using token probability scoring (like official Self-RAG).
+        Check if retrieval is needed using token sampling (llama-cpp compatible).
 
-        This implements the same approach as the official vLLM implementation:
-        score = P([Retrieval]) / (P([Retrieval]) + P([No Retrieval]))
+        Unlike vLLM which can get probability of any token via logprobs=vocab_size,
+        llama-cpp only returns top-K logprobs. We use the official Self-RAG fallback:
+        generate 1 token and check if it's [Retrieval] or [No Retrieval].
 
-        Uses load-delete-reload pattern: creates temporary model with logits_all=True,
-        gets token probabilities, then deletes model to free memory.
+        Per official Self-RAG implementation:
+        - If threshold provided: compute P([Retrieval]) / (P([Retrieval]) + P([No Retrieval]))
+        - Fallback: do_retrieve = "[Retrieval]" in pred
+
+        Since llama-cpp can't reliably get [Retrieval] probability when it's not in
+        top-K, we use the fallback approach: check what token was actually generated.
 
         Args:
             question: Input question
-            threshold: Retrieval threshold (default 0.5, like official impl)
+            threshold: Retrieval threshold (default 0.5, used for logprobs fallback)
 
         Returns:
             Tuple of (needs_retrieval: bool, retrieval_score: float)
         """
-        # Load temporary model with logits_all=True for logprobs
-        llm = self._get_logprobs_model()
+        # Use generation model (no separate logprobs model needed)
+        llm = self._get_gen_model()
 
         prompt = self._format_prompt(question, passage=None)
 
-        # Generate with logprobs enabled to get token probabilities
+        # Generate 1 token with greedy decoding to see retrieval decision
+        # Note: Can't use logprobs with logits_all=False, so we just check the generated token
         output = llm(
             prompt,
-            max_tokens=1,  # Just need first token probabilities
-            temperature=0.0,
-            logprobs=20,  # Get top 20 token probabilities
+            max_tokens=1,
+            temperature=0.0,  # Greedy - deterministic
             echo=False,
         )
 
-        # Get logprobs from response
-        logprobs_data = output['choices'][0].get('logprobs', {})
-        top_logprobs = logprobs_data.get('top_logprobs', [{}])[0] if logprobs_data else {}
+        generated_text = output['choices'][0]['text'].strip()
 
-        # Get log probabilities for retrieval tokens
-        # llama-cpp returns log probs, need to convert to probabilities
-        ret_logprob = top_logprobs.get('[Retrieval]', -100)
-        no_ret_logprob = top_logprobs.get('[No Retrieval]', -100)
+        # Check what token was actually generated
+        # This is the official Self-RAG fallback approach: do_retrieve = "[Retrieval]" in pred
+        if '[Retrieval]' in generated_text:
+            return True, 1.0
+        elif '[No Retrieval]' in generated_text:
+            return False, 0.0
 
-        # Convert log probs to probabilities
-        ret_prob = math.exp(ret_logprob) if ret_logprob > -50 else 0.0
-        no_ret_prob = math.exp(no_ret_logprob) if no_ret_logprob > -50 else 0.0
-
-        # DELETE temporary model to free memory BEFORE loading generation model
-        del llm
-        gc.collect()
-
-        # Compute normalized score (like official Self-RAG impl)
-        total = ret_prob + no_ret_prob
-        if total > 0:
-            retrieval_score = ret_prob / total
-        else:
-            # Neither token found in top logprobs - default to retrieval
-            retrieval_score = 0.5
-
-        needs_retrieval = retrieval_score > threshold
-        return needs_retrieval, retrieval_score
+        # Neither token found - default to RETRIEVE (conservative for legal domain)
+        # Legal questions generally benefit from retrieval
+        return True, 0.5
 
     def _generate_with_passage(
         self,
@@ -345,16 +387,16 @@ class SelfRAGGGUFInference:
         retrieval_threshold: float = 0.5,  # Configurable threshold (like official impl)
     ) -> SelfRAGOutput:
         """
-        Generate answer with adaptive retrieval using token probability scoring.
+        Generate answer with adaptive retrieval per Self-RAG Algorithm 1.
 
-        Implements the same approach as official Self-RAG (vLLM implementation):
-        1. Compute P([Retrieval]) / (P([Retrieval]) + P([No Retrieval]))
-        2. If score > threshold and retriever provided, retrieve and generate with passage
-        3. Otherwise, generate without retrieval
+        Implements the official Self-RAG approach:
+        1. Generate first token to check if model wants [Retrieval] or [No Retrieval]
+        2. If [Retrieval] and retriever provided: retrieve and generate with passage
+        3. Otherwise: generate without retrieval
 
-        Uses fresh model instances and TWO configs:
-        - logits_all=True only for retrieval check (needs token probs)
-        - logits_all=False for actual generation (prevents memory overflow)
+        Uses single persistent model with reset() between calls (llama-cpp compatible).
+        The retrieval check uses token sampling (like official fallback) instead of
+        logits_all=True which caused memory overflow on long prompts.
 
         Args:
             question: Input question
@@ -369,17 +411,14 @@ class SelfRAGGGUFInference:
         """
         # If passage provided, generate directly (no retrieval check needed)
         if passage is not None:
-            llm = self._get_fresh_model()  # logits_all=False
+            llm = self._get_gen_model()  # Persistent, reset internally
             result = self._generate_with_passage(llm, question, passage, max_tokens, temperature)
             result.retrieval_score = 1.0  # Passage was explicitly provided
-            del llm
-            gc.collect()
             return result
 
         # If no retriever provided, skip retrieval check entirely (No-RAG mode)
-        # This avoids loading logits_all=True model which causes memory overflow
         if retriever is None:
-            llm = self._get_fresh_model()  # logits_all=False
+            llm = self._get_gen_model()  # Persistent, reset internally
             # Per official impl: append [No Retrieval] to guide model
             prompt = self._format_prompt(question, passage=None, no_retrieval=True)
             output = llm(
@@ -395,18 +434,16 @@ class SelfRAGGGUFInference:
             # Per Self-RAG Algorithm 1: ISREL/ISSUP meaningless without passage
             result.isrel = None
             result.issup = None
-            del llm
-            gc.collect()
             return result
 
         # Retriever provided - check retrieval decision via token probabilities
-        # _check_retrieval_needed loads/deletes its own model internally
+        # _check_retrieval_needed uses persistent logprobs model
         needs_retrieval, retrieval_score = self._check_retrieval_needed(
             question, threshold=retrieval_threshold
         )
 
-        # Load generation model (logits_all=False to prevent overflow)
-        llm = self._get_fresh_model()
+        # Get generation model (persistent, reset internally)
+        llm = self._get_gen_model()
 
         if needs_retrieval:
             # Retrieve and generate with passage
@@ -417,8 +454,6 @@ class SelfRAGGGUFInference:
                     llm, question, retrieved_passage, max_tokens, temperature
                 )
                 result.retrieval_score = retrieval_score
-                del llm
-                gc.collect()
                 return result
 
         # Generate without retrieval
@@ -438,8 +473,6 @@ class SelfRAGGGUFInference:
         # Per Self-RAG Algorithm 1: ISREL/ISSUP meaningless without passage
         result.isrel = None
         result.issup = None
-        del llm
-        gc.collect()
         return result
 
     def generate_with_retrieval(
@@ -450,10 +483,15 @@ class SelfRAGGGUFInference:
         max_tokens: int = 512,
     ) -> Dict[str, Any]:
         """
-        Full Self-RAG pipeline with retrieval.
+        RAG pipeline that ALWAYS retrieves (like Basic RAG).
 
+        NOTE: This method always retrieves, bypassing the adaptive retrieval check.
+        For proper Self-RAG per Algorithm 1 (adaptive retrieval decision), use:
+            result = inference.generate(question, retriever=retriever)
+
+        Steps:
         1. Retrieve passages using LegalRetriever
-        2. Generate with best passage
+        2. Generate with best passage (forced retrieval)
         3. Return structured output with retrieval info
 
         Args:
@@ -541,6 +579,81 @@ class SelfRAGGGUFInference:
             results.append(result)
 
         return results
+
+    def generate_multiple(
+        self,
+        question: str,
+        passage: Optional[str] = None,
+        retriever: Any = None,
+        num_generations: int = DEFAULT_NUM_GENERATIONS,
+        temperature: float = 0.7,
+        max_tokens: int = 512,
+        retrieval_threshold: float = 0.5,
+    ) -> List[SelfRAGOutput]:
+        """
+        Generate K responses for EigenScore computation.
+
+        Works with ANY mode:
+        - No-RAG:    passage=None, retriever=None
+        - Basic RAG: passage=<text>, retriever=None
+        - Self-RAG:  passage=None, retriever=<instance>
+
+        This method is designed to be used with the standalone compute_eigenscore()
+        function for hallucination detection across any generation method.
+
+        Args:
+            question: Input question
+            passage: Pre-retrieved passage (for Basic RAG mode)
+            retriever: Retriever instance (for Self-RAG adaptive mode)
+            num_generations: K generations for diversity (default 10)
+            temperature: Must be > 0 for diversity (default 0.7)
+            max_tokens: Max tokens per generation
+            retrieval_threshold: Threshold for Self-RAG adaptive retrieval
+
+        Returns:
+            List of K SelfRAGOutput objects
+        """
+        if temperature <= 0:
+            temperature = 0.7  # Need diversity for EigenScore
+
+        generations = []
+
+        # Determine mode and get passage if needed
+        used_passage = passage
+        if used_passage is None and retriever is not None:
+            # Self-RAG mode: check if retrieval needed
+            needs_retrieval, _ = self._check_retrieval_needed(question, retrieval_threshold)
+            if needs_retrieval:
+                results = retriever.retrieve(question, top_k=1)
+                if results:
+                    used_passage = results[0]['text']
+
+        # Generate K responses
+        for i in range(num_generations):
+            if i > 0:
+                self._llm.reset()
+
+            llm = self._get_gen_model()
+
+            if used_passage:
+                result = self._generate_with_passage(llm, question, used_passage, max_tokens, temperature)
+            else:
+                prompt = self._format_prompt(question, passage=None, no_retrieval=True)
+                output = llm(
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stop=["###", "\n\n\n"],
+                    echo=False,
+                )
+                result = self._parse_output(output['choices'][0]['text'])
+                result.retrieve = "[No Retrieval]"
+                result.isrel = None
+                result.issup = None
+
+            generations.append(result)
+
+        return generations
 
     # =========================================================================
     # INSIDE Methods (EigenScore-based hallucination detection)
@@ -655,6 +768,7 @@ class SelfRAGGGUFInference:
         temperature: float = 0.7,  # Need temperature > 0 for diversity
         max_tokens: int = 512,
         eigenscore_threshold: float = EIGENSCORE_THRESHOLD,
+        retrieval_threshold: float = 0.5,  # Threshold for adaptive retrieval
     ) -> SelfRAGOutputWithEigenScore:
         """
         Generate with INSIDE hallucination detection via EigenScore.
@@ -664,13 +778,14 @@ class SelfRAGGGUFInference:
         ~79% AUROC (vs 80% for middle layer, 77% for final layer).
 
         Implements multi-generation EigenScore computation:
-        1. Generate K responses with temperature sampling
-        2. Embed each response using external encoder
-        3. Compute EigenScore from covariance matrix eigenvalues
-        4. Select best generation based on reflection tokens
-        5. Flag potential hallucination if EigenScore > threshold
+        1. Check if retrieval is needed using token sampling (like Self-RAG)
+        2. Generate K responses with temperature sampling
+        3. Embed each response using external encoder
+        4. Compute EigenScore from covariance matrix eigenvalues
+        5. Select best generation based on reflection tokens
+        6. Flag potential hallucination if EigenScore > threshold
 
-        Uses fresh model instance for EACH generation to avoid KV cache corruption.
+        Uses single persistent model with reset() between generations.
 
         Args:
             question: Input question
@@ -678,10 +793,11 @@ class SelfRAGGGUFInference:
             retriever: Optional retriever for passage retrieval
             embedding_model: External encoder for embeddings (required).
                             Must have encode(text) method (e.g., EmbeddingModel).
-            num_generations: Number of generations for EigenScore (K, default 10)
+            num_generations: Number of generations for EigenScore (K, default 7)
             temperature: Sampling temperature (must be > 0 for diversity)
             max_tokens: Maximum tokens per generation
             eigenscore_threshold: Threshold for hallucination detection
+            retrieval_threshold: Threshold for adaptive retrieval decision
 
         Returns:
             SelfRAGOutputWithEigenScore with answer, tokens, and EigenScore
@@ -701,17 +817,27 @@ class SelfRAGGGUFInference:
         generations: List[SelfRAGOutput] = []
         embeddings: List[np.ndarray] = []
 
-        # Step 1: Retrieve passage ONCE upfront
+        # Step 1: Determine if retrieval is needed using adaptive check (like Self-RAG)
         used_passage = passage
-        if used_passage is None and retriever is not None:
-            results = retriever.retrieve(question, top_k=1)
-            if results:
-                used_passage = results[0]['text']
+        retrieval_score = None
 
-        # Step 2: Generate K responses with fresh instance for EACH generation
+        if used_passage is None and retriever is not None:
+            # Use adaptive retrieval check like regular Self-RAG
+            needs_retrieval, retrieval_score = self._check_retrieval_needed(
+                question, threshold=retrieval_threshold
+            )
+            if needs_retrieval:
+                results = retriever.retrieve(question, top_k=1)
+                if results:
+                    used_passage = results[0]['text']
+
+        # Step 2: Generate K responses using persistent model with reset()
+        llm = self._get_gen_model()  # Persistent model, reset internally
+
         for i in range(num_generations):
-            # Create fresh model instance to avoid KV cache corruption
-            llm = self._get_fresh_model()
+            # Reset KV cache between generations (except first, already reset)
+            if i > 0:
+                self._llm.reset()
 
             if used_passage:
                 # Generate with passage
@@ -719,7 +845,7 @@ class SelfRAGGGUFInference:
                     llm, question, used_passage, max_tokens, temperature
                 )
                 result.retrieve = "[Retrieval]"
-                result.retrieval_score = 1.0
+                result.retrieval_score = retrieval_score if retrieval_score else 1.0
             else:
                 # Generate without passage
                 # Per official impl: append [No Retrieval] to guide model
@@ -733,14 +859,10 @@ class SelfRAGGGUFInference:
                 )
                 result = self._parse_output(output['choices'][0]['text'])
                 result.retrieve = "[No Retrieval]"
-                result.retrieval_score = 0.0
+                result.retrieval_score = retrieval_score if retrieval_score else 0.0
                 # Per Self-RAG Algorithm 1: ISREL/ISSUP meaningless without passage
                 result.isrel = None
                 result.issup = None
-
-            # Delete model to free memory before next iteration
-            del llm
-            gc.collect()
 
             generations.append(result)
 
