@@ -5,6 +5,7 @@ A Retrieval-Augmented Generation (RAG) system with dual hallucination detection 
 ## Key Features
 
 - **Self-RAG 7B**: Pre-trained model with reflection tokens for adaptive retrieval and self-verification
+- **Multi-Passage Ranking**: Critique-based scoring
 - **Quantized GGUF**: Q4_K_M quantization (~4GB) fits in 16GB memory, runs on Mac via llama.cpp + Metal
 - **EigenScore**: Hallucination detection via multi-generation semantic consistency (external encoder)
 - **LegalBench-RAG**: Evaluation on 6,858 legal queries benchmark
@@ -69,21 +70,21 @@ All settings customizable via YAML files in `configs/`:
 | 08 | combined_system | 45-60 min | Complete Self-RAG + EigenScore pipeline |
 | 09 | legalbench_retrieval | 60-90 min | LegalBench retrieval evaluation |
 | 10 | legalbench_pretrained_selfrag | 30-60 min | Pre-trained Self-RAG 7B GGUF |
-| 11 | legalbench_generation | 1-2 hrs | Generation method comparison |
+| 11 | legalbench_generation | 6-8 hrs | Generation comparison with multi-passage ranking |
 
 **Recommended path**: 00-05 (Tutorial) → 06-08 (EigenScore) → **09-11 (LegalBench)**
 
 ## Evaluation Results
 
-### Generation Method Comparison (10-query subset)
+### Generation Method Comparison (776 queries)
 
 | Method | F1 | ROUGE-L | EigenScore | Halluc% |
 |--------|-----|---------|------------|---------|
-| No-RAG | 0.188 | 0.111 | -0.99 | 100% |
-| Basic RAG | 0.226 | 0.152 | -2.95 | 100% |
-| Self-RAG | 0.263 | 0.180 | -2.93 | 100% |
+| No-RAG | 0.181 | 0.125 | -0.75 | 99% |
+| Basic RAG | 0.223 | 0.156 | -1.84 | 60% |
+| Self-RAG | 0.219 | 0.157 | -2.00 | 55% |
 
-*EigenScore threshold: -2.5. Lower EigenScore = more consistent = lower hallucination risk.*
+*EigenScore threshold: -2.0. Lower = more consistent = lower hallucination risk.*
 
 ### LegalBench-RAG Retrieval (776 queries)
 

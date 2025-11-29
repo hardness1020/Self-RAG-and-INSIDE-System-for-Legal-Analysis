@@ -709,20 +709,73 @@ class SelfRAGGGUFInference:
 
         return float(eigenscore)
 
+    def _compute_critique_score(
+        self,
+        output: SelfRAGOutput,
+        w_isrel: float = 1.0,
+        w_issup: float = 1.0,
+        w_isuse: float = 0.5,
+    ) -> float:
+        """
+        Compute critique score per Self-RAG paper Equation 4.
+
+        S(Critique) = w_ISREL × s_ISREL + w_ISSUP × s_ISSUP + w_ISUSE × s_ISUSE
+
+        Since we can't get token probabilities from GGUF, we use discrete values:
+        - ISREL: Relevant=1.0, Irrelevant=0.0
+        - ISSUP: Fully=1.0, Partially=0.5, No=0.0
+        - ISUSE: Normalized (1-5) → (0.0-1.0)
+
+        Args:
+            output: SelfRAGOutput with reflection tokens
+            w_isrel: Weight for ISREL score (default 1.0)
+            w_issup: Weight for ISSUP score (default 1.0)
+            w_isuse: Weight for ISUSE score (default 0.5)
+
+        Returns:
+            Weighted critique score (float)
+        """
+        score = 0.0
+
+        # ISREL score
+        if output.isrel:
+            s_isrel = 1.0 if 'Relevant' in output.isrel and 'Irrelevant' not in output.isrel else 0.0
+            score += w_isrel * s_isrel
+
+        # ISSUP score
+        if output.issup:
+            if 'Fully' in output.issup:
+                s_issup = 1.0
+            elif 'Partially' in output.issup:
+                s_issup = 0.5
+            else:
+                s_issup = 0.0
+            score += w_issup * s_issup
+
+        # ISUSE score (normalize 1-5 to 0-1)
+        if output.isuse:
+            match = re.search(r'(\d)', output.isuse)
+            if match:
+                s_isuse = (int(match.group(1)) - 1) / 4.0  # 1→0.0, 5→1.0
+                score += w_isuse * s_isuse
+
+        return score
+
     def _select_best_generation(
         self,
         generations: List[SelfRAGOutput],
+        w_isrel: float = 1.0,
+        w_issup: float = 1.0,
+        w_isuse: float = 0.5,
     ) -> SelfRAGOutput:
         """
-        Select best generation based on reflection tokens.
-
-        Selection criteria (in order):
-        1. Highest ISUSE utility score
-        2. ISSUP = "Fully supported" preferred
-        3. First generation as fallback
+        Select best generation using weighted critique score (paper Eq. 4).
 
         Args:
             generations: List of SelfRAGOutput from multi-generation
+            w_isrel: Weight for ISREL score (default 1.0)
+            w_issup: Weight for ISSUP score (default 1.0)
+            w_isuse: Weight for ISUSE score (default 0.5)
 
         Returns:
             Best SelfRAGOutput
@@ -733,30 +786,93 @@ class SelfRAGGGUFInference:
         if len(generations) == 1:
             return generations[0]
 
-        # Score each generation
-        def score_generation(gen: SelfRAGOutput) -> Tuple[int, int]:
-            # Extract utility score (1-5), default 0
-            utility = 0
-            if gen.isuse:
-                match = re.search(r'(\d)', gen.isuse)
-                if match:
-                    utility = int(match.group(1))
-
-            # ISSUP score: Fully=2, Partially=1, No=0
-            support = 0
-            if gen.issup:
-                if 'Fully' in gen.issup:
-                    support = 2
-                elif 'Partially' in gen.issup:
-                    support = 1
-
-            return (utility, support)
-
-        # Sort by score (descending)
-        scored = [(score_generation(g), i, g) for i, g in enumerate(generations)]
+        # Score each generation using weighted critique score
+        scored = [(self._compute_critique_score(g, w_isrel, w_issup, w_isuse), i, g)
+                  for i, g in enumerate(generations)]
         scored.sort(key=lambda x: x[0], reverse=True)
 
         return scored[0][2]
+
+    def generate_with_multi_passage_ranking(
+        self,
+        question: str,
+        retriever: Any,
+        top_k: int = 5,  # Paper default
+        max_tokens: int = 512,
+        temperature: float = 0.0,
+        w_isrel: float = 1.0,
+        w_issup: float = 1.0,
+        w_isuse: float = 0.5,
+    ) -> Dict[str, Any]:
+        """
+        Generate with multi-passage ranking per Self-RAG paper Section 3.3.
+
+        Simplified version (no beam search):
+        1. Retrieve K passages
+        2. Generate one output per passage
+        3. Score each using weighted critique score (Eq. 4)
+        4. Return best output
+
+        Args:
+            question: Input question
+            retriever: Retriever with retrieve(query, top_k) method
+            top_k: Number of passages to retrieve and rank
+            max_tokens: Maximum tokens for generation
+            temperature: Sampling temperature
+            w_isrel: Weight for ISREL score (default 1.0)
+            w_issup: Weight for ISSUP score (default 1.0)
+            w_isuse: Weight for ISUSE score (default 0.5)
+
+        Returns:
+            Dict with 'output', 'used_passage', 'passage_score',
+            'critique_score', and 'all_candidates' for analysis
+        """
+        # Step 1: Retrieve K passages
+        results = retriever.retrieve(question, top_k=top_k)
+
+        if not results:
+            # No passages found, generate without retrieval
+            output = self.generate(question, retriever=None, max_tokens=max_tokens)
+            return {
+                'output': output,
+                'used_passage': None,
+                'passage_score': None,
+                'critique_score': self._compute_critique_score(output, w_isrel, w_issup, w_isuse),
+                'all_candidates': [],
+            }
+
+        # Step 2: Generate for each passage
+        candidates = []
+        for result in results:
+            passage = result['text'][:1000]  # Truncate long passages
+
+            # Reset model state before each generation
+            self._llm.reset()
+            llm = self._get_gen_model()
+
+            # Generate with this passage
+            output = self._generate_with_passage(llm, question, passage, max_tokens, temperature)
+
+            # Step 3: Compute critique score
+            score = self._compute_critique_score(output, w_isrel, w_issup, w_isuse)
+            candidates.append({
+                'output': output,
+                'passage': passage,
+                'passage_score': result['score'],
+                'critique_score': score,
+            })
+
+        # Step 4: Select best by critique score
+        candidates.sort(key=lambda x: x['critique_score'], reverse=True)
+        best = candidates[0]
+
+        return {
+            'output': best['output'],
+            'used_passage': best['passage'],
+            'passage_score': best['passage_score'],
+            'critique_score': best['critique_score'],
+            'all_candidates': candidates,  # For analysis
+        }
 
     def generate_with_eigenscore(
         self,
