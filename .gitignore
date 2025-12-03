@@ -150,3 +150,5 @@ pip-delete-this-directory.txt
 transformers_cache/
 
 presentation-notes/
+.DS_Store
+data/legalbench-rag
